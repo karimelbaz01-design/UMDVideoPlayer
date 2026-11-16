@@ -300,25 +300,20 @@ struct ContentView: View {
                 }
 
                 let discName = destination.deletingPathExtension().lastPathComponent
-                let disc: ImportedDisc
-                do {
-                    let info = try UMDVideoISOReader.inspect(destination)
-                    disc = ImportedDisc(
-                        name: info.volumeName.isEmpty ? discName : info.volumeName,
-                        url: destination,
-                        isUMDVideo: true,
-                        streamCount: info.streamFiles.count,
-                        statusMessage: "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \(info.streamFiles.count) file video MPS individuati. Il lettore proverà ad avviare la riproduzione."
-                    )
-                } catch {
-                    disc = ImportedDisc(
-                        name: discName,
-                        url: destination,
-                        isUMDVideo: false,
-                        streamCount: 0,
-                        statusMessage: error.localizedDescription
-                    )
-                }
+                let inspection = try? UMDVideoISOReader.inspect(destination)
+                let isISO = destination.pathExtension.lowercased() == "iso"
+                let detectedName = inspection?.volumeName ?? ""
+                let displayName = detectedName.isEmpty ? discName : detectedName
+                let status = inspection.map {
+                    "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \\($0.streamFiles.count) file MPS individuati."
+                } ?? "File ISO importato. Il motore controllerà la struttura del disco quando avvii il film."
+                let disc = ImportedDisc(
+                    name: displayName,
+                    url: destination,
+                    isUMDVideo: isISO,
+                    streamCount: inspection?.streamFiles.count ?? 0,
+                    statusMessage: status
+                )
                 if !discs.contains(where: { $0.url == disc.url }) {
                     discs.append(disc)
                 }
