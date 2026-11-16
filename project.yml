@@ -12,6 +12,7 @@ targets:
     sources:
       - ContentView.swift
       - UMDVideoPlayerApp.swift
+      - UMDVideoISOReader.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.karim.umdvideoplayer
