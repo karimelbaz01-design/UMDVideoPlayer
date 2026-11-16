@@ -97,9 +97,6 @@ static int ios_touch_y;
 @end
 
 static UMDVideoSurface *active_surface;
-static int ios_touch_down;
-static int ios_touch_x;
-static int ios_touch_y;
 void ios_umd_set_surface(void *view)
 {
     active_surface = (__bridge UMDVideoSurface *)view;
