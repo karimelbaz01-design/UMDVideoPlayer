@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var showingImporter = false
     @State private var discs: [ImportedDisc] = []
     @State private var selectedDisc: ImportedDisc?
+    @State private var importError: String?
 
     var body: some View {
         ZStack {
@@ -50,6 +51,14 @@ struct ContentView: View {
             allowsMultipleSelection: true,
             onCompletion: handleImport
         )
+        .alert("Errore di importazione", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -240,7 +249,10 @@ struct ContentView: View {
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result else { return }
+        guard case .success(let urls) = result else {
+            if case .failure(let error) = result { importError = error.localizedDescription }
+            return
+        }
         for url in urls {
             let granted = url.startAccessingSecurityScopedResource()
             defer {
@@ -282,7 +294,7 @@ struct ContentView: View {
                     discs.append(disc)
                 }
             } catch {
-                // A production version will present a user-facing import error.
+                importError = error.localizedDescription
             }
         }
     }
