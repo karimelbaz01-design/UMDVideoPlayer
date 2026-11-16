@@ -16,16 +16,51 @@ targets:
       - UMDVideoPlayerScreen.swift
       - UMDVideoPlayerBridge.c
       - UMDVideoPlayerPlatform.m
-      - path: UMDVideoCore/src/app
-        type: group
-      - path: UMDVideoCore/src/core
-        type: group
-        excludes:
-          - atrac3p/**
-      - path: UMDVideoCore/src/core/atrac3p
-        type: group
-        excludes:
-          - COPYING.LGPLv2.1
+      - UMDVideoCore/src/app/backdrop.c
+      - UMDVideoCore/src/app/backdrop_png.c
+      - UMDVideoCore/src/app/disc.c
+      - UMDVideoCore/src/app/infosheet.c
+      - UMDVideoCore/src/app/intro.c
+      - UMDVideoCore/src/app/library.c
+      - UMDVideoCore/src/app/main.c
+      - UMDVideoCore/src/app/manual.c
+      - UMDVideoCore/src/app/manual_png.c
+      - UMDVideoCore/src/app/menu.c
+      - UMDVideoCore/src/app/osd.c
+      - UMDVideoCore/src/app/player.c
+      - UMDVideoCore/src/app/resume.c
+      - UMDVideoCore/src/app/screen.c
+      - UMDVideoCore/src/app/settings.c
+      - UMDVideoCore/src/app/sfx.c
+      - UMDVideoCore/src/core/canvas.c
+      - UMDVideoCore/src/core/cropdetect.c
+      - UMDVideoCore/src/core/deint.c
+      - UMDVideoCore/src/core/demux.c
+      - UMDVideoCore/src/core/disc_image.c
+      - UMDVideoCore/src/core/font8x8.c
+      - UMDVideoCore/src/core/h264.c
+      - UMDVideoCore/src/core/h264_cabac_tables.c
+      - UMDVideoCore/src/core/h264dec.c
+      - UMDVideoCore/src/core/h264dec_deblock.c
+      - UMDVideoCore/src/core/h264dec_recon.c
+      - UMDVideoCore/src/core/h264dec_slice.c
+      - UMDVideoCore/src/core/hash.c
+      - UMDVideoCore/src/core/icons.c
+      - UMDVideoCore/src/core/iso9660.c
+      - UMDVideoCore/src/core/jpeg.c
+      - UMDVideoCore/src/core/mpeg_ps.c
+      - UMDVideoCore/src/core/png.c
+      - UMDVideoCore/src/core/rco.c
+      - UMDVideoCore/src/core/sfo.c
+      - UMDVideoCore/src/core/umdv.c
+      - UMDVideoCore/src/core/vag.c
+      - UMDVideoCore/src/core/vsmx.c
+      - UMDVideoCore/src/core/vtiming.c
+      - UMDVideoCore/src/core/yuv.c
+      - UMDVideoCore/src/core/atrac3p/at3p.c
+      - UMDVideoCore/src/core/atrac3p/atrac.c
+      - UMDVideoCore/src/core/atrac3p/atrac3plus.c
+      - UMDVideoCore/src/core/atrac3p/atrac3plusdsp.c
       - UMDVideoCore/src/platform/posix/posix_sys.c
       - UMDVideoCore/src/platform/macos/mac_video.c
       - UMDVideoCore/src/platform/macos/mac_audio.c
