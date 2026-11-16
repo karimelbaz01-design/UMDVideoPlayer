@@ -23,25 +23,54 @@ struct ContentView: View {
     @State private var discs: [ImportedDisc] = []
     @State private var selectedDisc: ImportedDisc?
     @State private var importError: String?
+    @State private var playingDisc: ImportedDisc?
 
     var body: some View {
         ZStack {
-            background
-            VStack(spacing: 0) {
-                header
-                Picker("Interfaccia", selection: $style) {
-                    ForEach(PlayerStyle.allCases) { option in
-                        Text(option.rawValue).tag(option)
+            if let disc = playingDisc {
+                VStack(spacing: 0) {
+                    HStack {
+                        Button {
+                            playingDisc = nil
+                        } label: {
+                            Label("Libreria", systemImage: "chevron.left")
+                                .font(.headline)
+                        }
+                        Spacer()
+                        Text(disc.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.black)
+
+                    UMDVideoPlayerScreen(path: disc.url.path) { message in
+                        importError = message
                     }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
+                .background(Color.black)
+                .ignoresSafeArea()
+            } else {
+                ZStack {
+                    background
+                    VStack(spacing: 0) {
+                        header
+                        Picker("Interfaccia", selection: $style) {
+                            ForEach(PlayerStyle.allCases) { option in
+                                Text(option.rawValue).tag(option)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
 
-                if style == .modern {
-                    modernLibrary
-                } else {
-                    pspLibrary
+                        if style == .modern {
+                            modernLibrary
+                        } else {
+                            pspLibrary
+                        }
+                    }
                 }
             }
         }
@@ -51,7 +80,7 @@ struct ContentView: View {
             allowsMultipleSelection: true,
             onCompletion: handleImport
         )
-        .alert("Errore di importazione", isPresented: Binding(
+        .alert("Avviso", isPresented: Binding(
             get: { importError != nil },
             set: { if !$0 { importError = nil } }
         )) {
