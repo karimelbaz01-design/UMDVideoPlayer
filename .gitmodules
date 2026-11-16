@@ -1,0 +1,3 @@
+[submodule "UMDVideoCore"]
+	path = UMDVideoCore
+	url = https://github.com/xesf/umd-player.git
