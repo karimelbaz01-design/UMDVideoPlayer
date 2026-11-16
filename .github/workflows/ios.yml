@@ -7,6 +7,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: umd-video-ios-build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
