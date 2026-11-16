@@ -5,9 +5,10 @@ import AVFoundation
 struct UMDVideoPlayerScreen: UIViewRepresentable {
     let path: String
     let onError: (String) -> Void
+    let onFinish: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onError: onError)
+        Coordinator(onError: onError, onFinish: onFinish)
     }
 
     func makeUIView(context: Context) -> UMDVideoSurface {
@@ -28,9 +29,11 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
         private var displayLink: CADisplayLink?
         private var isRunning = false
         private let onError: (String) -> Void
+        private let onFinish: () -> Void
 
-        init(onError: @escaping (String) -> Void) {
+        init(onError: @escaping (String) -> Void, onFinish: @escaping () -> Void) {
             self.onError = onError
+            self.onFinish = onFinish
         }
 
         func start(path: String, surface: UMDVideoSurface) {
@@ -58,6 +61,7 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
             guard isRunning else { return }
             if ios_umd_frame() == 0 {
                 stop()
+                onFinish()
             }
         }
 
