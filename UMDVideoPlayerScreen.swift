@@ -47,7 +47,9 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
                 ios_umd_clear_surface()
                 UIApplication.shared.isIdleTimerDisabled = false
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-                onError("Il motore non è riuscito ad aprire questo disco. Controlla che l'ISO sia un UMD Video valido.")
+                DispatchQueue.main.async {
+                    self.onError("Il motore non è riuscito ad aprire questo disco. Controlla che l'ISO sia un UMD Video valido.")
+                }
                 return
             }
 
