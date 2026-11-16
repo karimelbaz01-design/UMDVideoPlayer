@@ -14,6 +14,7 @@ struct UMDVideoISOReader {
         case invalidISO
         case missingUMDVideoFolder
         case missingPlaylist
+        case directoryTooLarge
 
         var errorDescription: String? {
             switch self {
@@ -21,11 +22,13 @@ struct UMDVideoISOReader {
             case .invalidISO: return "Il file non sembra essere un'immagine ISO-9660 valida."
             case .missingUMDVideoFolder: return "Nell'immagine non è presente la cartella UMD_VIDEO."
             case .missingPlaylist: return "La cartella UMD_VIDEO non contiene PLAYLIST.UMD."
+            case .directoryTooLarge: return "La struttura ISO contiene una directory troppo grande o non valida."
             }
         }
     }
 
     private static let sectorSize = 2048
+    private static let maximumDirectorySize = 16 * 1024 * 1024
 
     private struct Entry {
         let name: String
@@ -39,8 +42,10 @@ struct UMDVideoISOReader {
             throw ReadError.unreadableImage
         }
         defer { try? handle.close() }
+        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(UInt64.init) ?? 0
+        guard fileSize >= UInt64(17 * sectorSize) else { throw ReadError.invalidISO }
 
-        guard let descriptor = readExactly(handle, offset: 16 * sectorSize, count: sectorSize),
+        guard let descriptor = readExactly(handle, offset: UInt64(16 * sectorSize), count: sectorSize),
               descriptor.count == sectorSize,
               descriptor[0] == 1,
               String(decoding: descriptor[1...5], as: UTF8.self) == "CD001",
@@ -54,14 +59,14 @@ struct UMDVideoISOReader {
             throw ReadError.invalidISO
         }
 
-        let rootEntries = try readDirectory(handle, entry: root)
+        let rootEntries = try readDirectory(handle, entry: root, fileSize: fileSize)
         guard let videoFolder = rootEntries.first(where: {
             $0.isDirectory && $0.name.caseInsensitiveCompare("UMD_VIDEO") == .orderedSame
         }) else {
             throw ReadError.missingUMDVideoFolder
         }
 
-        let videoEntries = try readDirectory(handle, entry: videoFolder)
+        let videoEntries = try readDirectory(handle, entry: videoFolder, fileSize: fileSize)
         guard let playlist = videoEntries.first(where: {
             !$0.isDirectory && $0.name.uppercased().hasPrefix("PLAYLIST.UMD")
         }) else {
@@ -72,7 +77,7 @@ struct UMDVideoISOReader {
             $0.isDirectory && $0.name.caseInsensitiveCompare("STREAM") == .orderedSame
         })
         let streams = try streamFolder.map { folder in
-            try readDirectory(handle, entry: folder)
+            try readDirectory(handle, entry: folder, fileSize: fileSize)
                 .filter { !$0.isDirectory && $0.name.uppercased().hasSuffix(".MPS") }
                 .map(\.name)
                 .sorted()
@@ -85,12 +90,13 @@ struct UMDVideoISOReader {
         )
     }
 
-    private static func readDirectory(_ handle: FileHandle, entry: Entry) throws -> [Entry] {
-        let data = readExactly(
-            handle,
-            offset: UInt64(entry.extent) * UInt64(sectorSize),
-            count: Int(entry.size)
-        ) ?? Data()
+    private static func readDirectory(_ handle: FileHandle, entry: Entry, fileSize: UInt64) throws -> [Entry] {
+        let offset = UInt64(entry.extent) * UInt64(sectorSize)
+        let size = UInt64(entry.size)
+        guard size > 0, size <= UInt64(maximumDirectorySize), offset <= fileSize, size <= fileSize - offset else {
+            throw ReadError.directoryTooLarge
+        }
+        let data = readExactly(handle, offset: offset, count: Int(size)) ?? Data()
         guard data.count == Int(entry.size) else { throw ReadError.invalidISO }
 
         var entries: [Entry] = []
@@ -142,10 +148,10 @@ struct UMDVideoISOReader {
         return Entry(name: name, extent: extent, size: size, isDirectory: (bytes[25] & 0x02) != 0)
     }
 
-    private static func readExactly(_ handle: FileHandle, offset: Int, count: Int) -> Data? {
+    private static func readExactly(_ handle: FileHandle, offset: UInt64, count: Int) -> Data? {
         guard count >= 0 else { return nil }
         do {
-            try handle.seek(toOffset: UInt64(offset))
+            try handle.seek(toOffset: offset)
             guard let data = try handle.read(upToCount: count), data.count == count else { return nil }
             return data
         } catch {
