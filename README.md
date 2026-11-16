@@ -6,12 +6,16 @@ An iOS app prototype for organizing PSP UMD Video disc images, with a modern lib
 
 - SwiftUI interface with Modern and PSP-style layouts.
 - Imports ISO files from the iOS Files picker and copies them into the app's Documents folder.
-- GitHub Actions builds the iOS Simulator app without code signing.
+- Identifies the ISO-9660 UMD_VIDEO folder, PLAYLIST.UMD, and MPS stream files.
+- Includes the open-source [UMD Player engine](https://github.com/xesf/umd-player) as a pinned Git submodule in `UMDVideoCore`. Its portable C core includes playlist parsing, MPEG-PS demuxing, H.264 video decoding, and ATRAC3plus audio decoding.
+- GitHub Actions builds the iOS Simulator prototype and separately compiles the upstream engine's macOS reference player.
 
-## Important playback note
+## Playback status
 
-Importing an ISO is not the same as decoding it. PSP UMD Video images use a disc/container structure and video formats that need a dedicated parser and playback pipeline. The current prototype does **not** yet decode or play UMD Video ISO files. A future playback engine must be implemented and tested against legally obtained sample media.
+**The iOS app does not yet play UMD Video movies.** The upstream engine is now pinned in the repository and its macOS reference build is used as a compilation check. The next engineering step is an iOS platform adapter that connects the portable playback core to iOS file access, audio output, video presentation, and the SwiftUI interface. That adapter must be implemented and tested before movie playback can be claimed.
 
-## Build
+The engine is MIT-licensed, with its ATRAC3plus decoder under LGPL-2.1-or-later. Keep the upstream license and notice files with any redistributed build. This project is not affiliated with Sony.
 
-The repository uses XcodeGen (project.yml) and GitHub Actions. The workflow produces an iOS Simulator .app artifact; it is not a signed, directly installable iPhone app.
+## Testing on iPhone
+
+A simulator `.app` artifact is not directly installable on a physical iPhone. A separate iPhone installation/signing route is still required. The current workflow is a build and integration check, not an iPhone-ready release.
