@@ -305,7 +305,7 @@ struct ContentView: View {
                 let detectedName = inspection?.volumeName ?? ""
                 let displayName = detectedName.isEmpty ? discName : detectedName
                 let status = inspection.map {
-                    "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \\($0.streamFiles.count) file MPS individuati."
+                    "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \($0.streamFiles.count) file MPS individuati."
                 } ?? "File ISO importato. Il motore controllerà la struttura del disco quando avvii il film."
                 let disc = ImportedDisc(
                     name: displayName,
