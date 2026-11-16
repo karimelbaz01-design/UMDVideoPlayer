@@ -42,7 +42,8 @@ struct UMDVideoISOReader {
             throw ReadError.unreadableImage
         }
         defer { try? handle.close() }
-        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(UInt64.init) ?? 0
+        let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+        let fileSize = UInt64(resourceValues?.fileSize ?? 0)
         guard fileSize >= UInt64(17 * sectorSize) else { throw ReadError.invalidISO }
 
         guard let descriptor = readExactly(handle, offset: UInt64(16 * sectorSize), count: sectorSize),
@@ -91,31 +92,31 @@ struct UMDVideoISOReader {
     }
 
     private static func readDirectory(_ handle: FileHandle, entry: Entry, fileSize: UInt64) throws -> [Entry] {
-        let offset = UInt64(entry.extent) * UInt64(sectorSize)
+        let directoryOffset = UInt64(entry.extent) * UInt64(sectorSize)
         let size = UInt64(entry.size)
-        guard size > 0, size <= UInt64(maximumDirectorySize), offset <= fileSize, size <= fileSize - offset else {
+        guard size > 0, size <= UInt64(maximumDirectorySize), directoryOffset <= fileSize, size <= fileSize - directoryOffset else {
             throw ReadError.directoryTooLarge
         }
-        let data = readExactly(handle, offset: offset, count: Int(size)) ?? Data()
+        let data = readExactly(handle, offset: directoryOffset, count: Int(size)) ?? Data()
         guard data.count == Int(entry.size) else { throw ReadError.invalidISO }
 
         var entries: [Entry] = []
-        var offset = 0
+        var cursor = 0
 
-        while offset < data.count {
-            let recordLength = Int(data[offset])
+        while cursor < data.count {
+            let recordLength = Int(data[cursor])
             if recordLength == 0 {
-                offset = ((offset / sectorSize) + 1) * sectorSize
+                offset = ((cursor / sectorSize) + 1) * sectorSize
                 continue
             }
-            guard recordLength >= 34, offset + recordLength <= data.count else {
+            guard recordLength >= 34, cursor + recordLength <= data.count else {
                 throw ReadError.invalidISO
             }
-            let record = Array(data[offset..<(offset + recordLength)])
+            let record = Array(data[cursor..<(cursor + recordLength)])
             if let parsed = parseEntry(record), parsed.name != "." && parsed.name != ".." {
                 entries.append(parsed)
             }
-            offset += recordLength
+            cursor += recordLength
         }
         return entries
     }
