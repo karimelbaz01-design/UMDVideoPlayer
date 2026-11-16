@@ -214,7 +214,7 @@ struct ContentView: View {
                     VStack(spacing: 14) {
                         ForEach(discs) { disc in
                             Button {
-                                if disc.isUMDVideo { playingDisc = disc } else { selectedDisc = disc }
+                                if disc.isISO { playingDisc = disc } else { selectedDisc = disc }
                             } label: {
                                 HStack {
                                     Image(systemName: "opticaldisc.fill")
