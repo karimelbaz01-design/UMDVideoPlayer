@@ -96,7 +96,7 @@ static int ios_touch_y;
 
 @end
 
-static __weak UMDVideoSurface *active_surface;
+static UMDVideoSurface *active_surface;
 static int ios_touch_down;
 static int ios_touch_x;
 static int ios_touch_y;
