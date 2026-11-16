@@ -293,11 +293,20 @@ struct ContentView: View {
                     for: .documentDirectory,
                     in: .userDomainMask
                 )[0]
-                let destination = documents.appendingPathComponent(url.lastPathComponent)
-
-                if !FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.copyItem(at: url, to: destination)
+                var destination = documents.appendingPathComponent(url.lastPathComponent)
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    let baseName = url.deletingPathExtension().lastPathComponent
+                    let fileExtension = url.pathExtension
+                    var suffix = 2
+                    repeat {
+                        let candidateName = fileExtension.isEmpty
+                            ? "\\(baseName)-\\(suffix)"
+                            : "\\(baseName)-\\(suffix).\\(fileExtension)"
+                        destination = documents.appendingPathComponent(candidateName)
+                        suffix += 1
+                    } while FileManager.default.fileExists(atPath: destination.path)
                 }
+                try FileManager.default.copyItem(at: url, to: destination)
 
                 let discName = destination.deletingPathExtension().lastPathComponent
                 let inspection = try? UMDVideoISOReader.inspect(destination)
