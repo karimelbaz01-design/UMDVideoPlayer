@@ -45,8 +45,13 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "UMD Video"
 
+    resources:
+      - UMDVideoCore/LICENSE
+      - UMDVideoCore/NOTICE
+      - UMDVideoCore/src/core/atrac3p/COPYING.LGPLv2.1
     dependencies:
       - sdk: AudioToolbox.framework
       - sdk: CoreVideo.framework
       - sdk: CoreGraphics.framework
       - sdk: QuartzCore.framework
+      - sdk: libm.tbd
