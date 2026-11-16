@@ -8,6 +8,10 @@
 #include "UMDVideoCore/src/platform/macos/mac_frame.h"
 #include "UMDVideoCore/src/core/deint.h"
 
+static int ios_touch_down;
+static int ios_touch_x;
+static int ios_touch_y;
+
 @interface UMDVideoSurface ()
 @property(nonatomic, strong) CALayer *videoLayer;
 @property(nonatomic, strong) CALayer *subtitleLayer;
