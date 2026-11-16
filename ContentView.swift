@@ -300,8 +300,8 @@ struct ContentView: View {
                     var suffix = 2
                     repeat {
                         let candidateName = fileExtension.isEmpty
-                            ? "\\(baseName)-\\(suffix)"
-                            : "\\(baseName)-\\(suffix).\\(fileExtension)"
+                            ? "\(baseName)-\(suffix)"
+                            : "\(baseName)-\(suffix).\(fileExtension)"
                         destination = documents.appendingPathComponent(candidateName)
                         suffix += 1
                     } while FileManager.default.fileExists(atPath: destination.path)
