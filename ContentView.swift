@@ -12,6 +12,9 @@ struct ImportedDisc: Identifiable {
     let id = UUID()
     let name: String
     let url: URL
+    let isUMDVideo: Bool
+    let streamCount: Int
+    let statusMessage: String
 }
 
 struct ContentView: View {
@@ -140,7 +143,7 @@ struct ContentView: View {
             importButton
         }
         .padding(20)
-        .alert("Motore di riproduzione non ancora collegato", isPresented: Binding(
+        .alert(selectedDisc?.isUMDVideo == true ? "UMD Video riconosciuto" : "Immagine non riconosciuta", isPresented: Binding(
             get: { selectedDisc != nil },
             set: { if !$0 { selectedDisc = nil } }
         )) {
@@ -197,7 +200,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 20)
-        .alert("Motore di riproduzione non ancora collegato", isPresented: Binding(
+        .alert(selectedDisc?.isUMDVideo == true ? "UMD Video riconosciuto" : "Immagine non riconosciuta", isPresented: Binding(
             get: { selectedDisc != nil },
             set: { if !$0 { selectedDisc = nil } }
         )) {
@@ -255,10 +258,26 @@ struct ContentView: View {
                     try FileManager.default.copyItem(at: url, to: destination)
                 }
 
-                let disc = ImportedDisc(
-                    name: destination.deletingPathExtension().lastPathComponent,
-                    url: destination
-                )
+                let discName = destination.deletingPathExtension().lastPathComponent
+                let disc: ImportedDisc
+                do {
+                    let info = try UMDVideoISOReader.inspect(destination)
+                    disc = ImportedDisc(
+                        name: info.volumeName.isEmpty ? discName : info.volumeName,
+                        url: destination,
+                        isUMDVideo: true,
+                        streamCount: info.streamFiles.count,
+                        statusMessage: "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \\(info.streamFiles.count) file video MPS individuati. Il prossimo passaggio è collegare il decoder e il lettore."
+                    )
+                } catch {
+                    disc = ImportedDisc(
+                        name: discName,
+                        url: destination,
+                        isUMDVideo: false,
+                        streamCount: 0,
+                        statusMessage: error.localizedDescription
+                    )
+                }
                 if !discs.contains(where: { $0.url == disc.url }) {
                     discs.append(disc)
                 }
