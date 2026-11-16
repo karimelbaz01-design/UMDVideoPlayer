@@ -123,7 +123,7 @@ struct ContentView: View {
                                             .font(.headline)
                                             .lineLimit(2)
                                             .multilineTextAlignment(.leading)
-                                        Text("Immagine UMD • ISO")
+                                        Text(disc.isUMDVideo ? "UMD Video • \(disc.streamCount) tracce" : "ISO non riconosciuta")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
@@ -149,7 +149,7 @@ struct ContentView: View {
         )) {
             Button("OK", role: .cancel) { selectedDisc = nil }
         } message: {
-            Text("Il file \(selectedDisc?.name ?? "") è stato importato. La riproduzione ISO sarà aggiunta in una fase successiva.")
+            Text(selectedDisc?.statusMessage ?? "")
         }
     }
 
@@ -182,7 +182,7 @@ struct ContentView: View {
                                         .foregroundStyle(.cyan)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(disc.name).font(.headline)
-                                        Text("UMD VIDEO").font(.caption2).tracking(2).foregroundStyle(.cyan)
+                                        Text(disc.isUMDVideo ? "UMD VIDEO" : "ISO NON RICONOSCIUTA").font(.caption2).tracking(2).foregroundStyle(disc.isUMDVideo ? .cyan : .orange)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -206,7 +206,7 @@ struct ContentView: View {
         )) {
             Button("OK", role: .cancel) { selectedDisc = nil }
         } message: {
-            Text("Il file \(selectedDisc?.name ?? "") è stato importato. La riproduzione ISO sarà aggiunta in una fase successiva.")
+            Text(selectedDisc?.statusMessage ?? "")
         }
     }
 
