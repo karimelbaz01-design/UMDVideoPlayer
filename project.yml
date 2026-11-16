@@ -51,6 +51,7 @@ targets:
       - UMDVideoCore/src/core/atrac3p/COPYING.LGPLv2.1
     dependencies:
       - sdk: AudioToolbox.framework
+      - sdk: AVFoundation.framework
       - sdk: CoreVideo.framework
       - sdk: CoreGraphics.framework
       - sdk: QuartzCore.framework
