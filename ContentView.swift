@@ -46,9 +46,12 @@ struct ContentView: View {
                     .padding(.vertical, 12)
                     .background(Color.black)
 
-                    UMDVideoPlayerScreen(path: disc.url.path) { message in
+                    UMDVideoPlayerScreen(path: disc.url.path, onError: { message in
+                        playingDisc = nil
                         importError = message
-                    }
+                    }, onFinish: {
+                        playingDisc = nil
+                    })
                 }
                 .background(Color.black)
                 .ignoresSafeArea()
