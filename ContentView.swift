@@ -12,6 +12,7 @@ struct ImportedDisc: Identifiable {
     let id = UUID()
     let name: String
     let url: URL
+    let isISO: Bool
     let isUMDVideo: Bool
     let streamCount: Int
     let statusMessage: String
@@ -88,6 +89,7 @@ struct ContentView: View {
         } message: {
             Text(importError ?? "")
         }
+        .onAppear(perform: loadLibrary)
         .preferredColorScheme(.dark)
     }
 
@@ -145,7 +147,7 @@ struct ContentView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(discs) { disc in
                             Button {
-                                if disc.isUMDVideo { playingDisc = disc } else { selectedDisc = disc }
+                                if disc.isISO { playingDisc = disc } else { selectedDisc = disc }
                             } label: {
                                 HStack(spacing: 14) {
                                     RoundedRectangle(cornerRadius: 12)
@@ -220,7 +222,7 @@ struct ContentView: View {
                                         .foregroundStyle(.cyan)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(disc.name).font(.headline)
-                                        Text(disc.isUMDVideo ? "UMD VIDEO" : "ISO NON RICONOSCIUTA").font(.caption2).tracking(2).foregroundStyle(disc.isUMDVideo ? .cyan : .orange)
+                                        Text(disc.isUMDVideo ? "UMD VIDEO" : (disc.isISO ? "ISO DA VERIFICARE" : "FILE NON ISO")).font(.caption2).tracking(2).foregroundStyle(disc.isUMDVideo ? .cyan : .orange)
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -277,6 +279,37 @@ struct ContentView: View {
         }
     }
 
+    private func loadLibrary() {
+        let documents = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        )[0]
+
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: documents,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        discs = files
+            .filter { $0.pathExtension.lowercased() == "iso" }
+            .map { url in
+                let inspection = try? UMDVideoISOReader.inspect(url)
+                let detectedName = inspection?.volumeName ?? ""
+                return ImportedDisc(
+                    name: detectedName.isEmpty ? url.deletingPathExtension().lastPathComponent : detectedName,
+                    url: url,
+                    isISO: true,
+                    isUMDVideo: inspection != nil,
+                    streamCount: inspection?.streamFiles.count ?? 0,
+                    statusMessage: inspection.map {
+                        "UMD Video riconosciuto: \\($0.streamFiles.count) tracce MPS."
+                    } ?? "ISO importata. Il motore proverà a riconoscere il disco all'avvio."
+                )
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result else {
             if case .failure(let error) = result { importError = error.localizedDescription }
@@ -319,7 +352,8 @@ struct ContentView: View {
                 let disc = ImportedDisc(
                     name: displayName,
                     url: destination,
-                    isUMDVideo: isISO,
+                    isISO: isISO,
+                    isUMDVideo: inspection != nil,
                     streamCount: inspection?.streamFiles.count ?? 0,
                     statusMessage: status
                 )
