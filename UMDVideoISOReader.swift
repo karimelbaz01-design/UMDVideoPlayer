@@ -106,7 +106,7 @@ struct UMDVideoISOReader {
         while cursor < data.count {
             let recordLength = Int(data[cursor])
             if recordLength == 0 {
-                offset = ((cursor / sectorSize) + 1) * sectorSize
+                cursor = ((cursor / sectorSize) + 1) * sectorSize
                 continue
             }
             guard recordLength >= 34, cursor + recordLength <= data.count else {
