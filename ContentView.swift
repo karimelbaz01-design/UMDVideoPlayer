@@ -163,7 +163,7 @@ struct ContentView: View {
                                             .font(.headline)
                                             .lineLimit(2)
                                             .multilineTextAlignment(.leading)
-                                        Text(disc.isUMDVideo ? "UMD Video • \(disc.streamCount) tracce" : "ISO non riconosciuta")
+                                        Text(disc.isUMDVideo ? "UMD Video • \(disc.streamCount) tracce" : (disc.isISO ? "ISO da verificare" : "File non ISO"))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
