@@ -13,8 +13,10 @@ int ios_umd_start(const char *iso_path)
 
     argv[0] = app_name;
     argv[1] = (char *)iso_path;
-    if (app_init(2, argv) != 0)
+    if (app_init(2, argv) != 0) {
+        app_shutdown();
         return -1;
+    }
 
     app_started = 1;
     return 0;
