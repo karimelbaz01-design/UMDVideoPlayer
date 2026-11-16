@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 struct UMDVideoPlayerScreen: UIViewRepresentable {
     let path: String
@@ -35,11 +36,14 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
         func start(path: String, surface: UMDVideoSurface) {
             ios_umd_set_surface(Unmanaged.passUnretained(surface).toOpaque())
             UIApplication.shared.isIdleTimerDisabled = true
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
+            try? AVAudioSession.sharedInstance().setActive(true)
 
             let result = path.withCString { ios_umd_start($0) }
             guard result == 0 else {
                 ios_umd_clear_surface()
                 UIApplication.shared.isIdleTimerDisabled = false
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
                 onError("Il motore non è riuscito ad aprire questo disco. Controlla che l'ISO sia un UMD Video valido.")
                 return
             }
@@ -67,6 +71,7 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
             }
             ios_umd_clear_surface()
             UIApplication.shared.isIdleTimerDisabled = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }
