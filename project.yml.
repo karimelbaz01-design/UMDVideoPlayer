@@ -1,0 +1,21 @@
+
+name: UMDVideoPlayer
+
+options:
+  bundleIdPrefix: com.karim
+
+targets:
+  UMDVideoPlayer:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - ContentView.swift
+      - UMDVideoPlayerApp.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.karim.umdvideoplayer
+        PRODUCT_NAME: UMDVideoPlayer
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
