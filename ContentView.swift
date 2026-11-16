@@ -145,7 +145,7 @@ struct ContentView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(discs) { disc in
                             Button {
-                                selectedDisc = disc
+                                if disc.isUMDVideo { playingDisc = disc } else { selectedDisc = disc }
                             } label: {
                                 HStack(spacing: 14) {
                                     RoundedRectangle(cornerRadius: 12)
@@ -308,7 +308,7 @@ struct ContentView: View {
                         url: destination,
                         isUMDVideo: true,
                         streamCount: info.streamFiles.count,
-                        statusMessage: "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \\(info.streamFiles.count) file video MPS individuati. Il prossimo passaggio è collegare il decoder e il lettore."
+                        statusMessage: "Struttura UMD_VIDEO trovata. Playlist riconosciuta e \(info.streamFiles.count) file video MPS individuati. Il lettore proverà ad avviare la riproduzione."
                     )
                 } catch {
                     disc = ImportedDisc(
