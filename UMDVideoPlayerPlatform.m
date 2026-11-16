@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "UMDVideoPlayerSurface.h"
 #import <QuartzCore/QuartzCore.h>
 #import <CoreVideo/CoreVideo.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -95,7 +96,6 @@ static __weak UMDVideoSurface *active_surface;
 static int ios_touch_down;
 static int ios_touch_x;
 static int ios_touch_y;
-
 void ios_umd_set_surface(void *view)
 {
     active_surface = (__bridge UMDVideoSurface *)view;
@@ -113,7 +113,7 @@ static CGRect screen_rect(plat_rect r)
         return CGRectZero;
     CGRect b = active_surface.bounds;
     return CGRectMake(r.x * b.size.width,
-                      r.y * b.size.height,
+                      (1.0 - r.y - r.h) * b.size.height,
                       r.w * b.size.width,
                       r.h * b.size.height);
 }
@@ -198,7 +198,7 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
         if (info->video_w > 0 && info->video_h > 0 && info->src_w > 0 && info->src_h > 0) {
             active_surface.videoLayer.contentsRect = CGRectMake(
                 (CGFloat)info->src_x / info->video_w,
-                (CGFloat)info->src_y / info->video_h,
+                1.0 - (CGFloat)(info->src_y + info->src_h) / info->video_h,
                 (CGFloat)info->src_w / info->video_w,
                 (CGFloat)info->src_h / info->video_h);
         }
