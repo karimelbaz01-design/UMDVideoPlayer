@@ -13,11 +13,40 @@ targets:
       - ContentView.swift
       - UMDVideoPlayerApp.swift
       - UMDVideoISOReader.swift
+      - UMDVideoPlayerScreen.swift
+      - UMDVideoPlayerBridge.c
+      - UMDVideoPlayerPlatform.m
+      - path: UMDVideoCore/src/app
+        type: group
+      - path: UMDVideoCore/src/core
+        type: group
+        excludes:
+          - atrac3p/**
+      - path: UMDVideoCore/src/core/atrac3p
+        type: group
+        excludes:
+          - COPYING.LGPLv2.1
+      - UMDVideoCore/src/platform/posix/posix_sys.c
+      - UMDVideoCore/src/platform/macos/mac_video.c
+      - UMDVideoCore/src/platform/macos/mac_audio.c
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.karim.umdvideoplayer
         PRODUCT_NAME: UMDVideoPlayer
         SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: UMDVideoPlayer-Bridging-Header.h
+        CLANG_ENABLE_OBJC_ARC: YES
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/UMDVideoCore/src"
+          - "$(SRCROOT)/UMDVideoCore/src/core"
+          - "$(SRCROOT)/UMDVideoCore/src/app"
+          - "$(SRCROOT)/UMDVideoCore/src/platform"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "UMD Video"
+
+    dependencies:
+      - sdk: AudioToolbox.framework
+      - sdk: CoreVideo.framework
+      - sdk: CoreGraphics.framework
+      - sdk: QuartzCore.framework
