@@ -12,6 +12,7 @@ targets:
     sources:
       - ContentView.swift
       - GeneralVideoPlayerScreen.swift
+      - FrameAVPlayerView.swift
       - FrameBrowserPage.swift
       - FrameIPTVPage.swift
       - FrameSettingsPage.swift
