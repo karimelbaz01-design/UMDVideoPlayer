@@ -393,6 +393,47 @@ struct ContentView: View {
                     }
                 }
             }
+            sectionHeading("INPUT PSP", subtitle: "Diagnostica dei comandi in tempo reale")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Pulsanti rilevati")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+                let buttonLabels: [(UInt32, String)] = [
+                    (0, "↑"), (1, "↓"), (2, "←"), (3, "→"),
+                    (4, "✕"), (5, "○"), (6, "□"), (7, "△"),
+                    (8, "L"), (9, "R"), (10, "START"), (11, "SELECT")
+                ]
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: 8)], spacing: 8) {
+                    ForEach(buttonLabels, id: \.0) { item in
+                        let pressed = (controllerManager.gameButtons & (UInt32(1) << item.0)) != 0
+                        Text(item.1)
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(pressed ? ink : .white.opacity(0.55))
+                            .background(pressed ? lavender : .white.opacity(0.07),
+                                        in: RoundedRectangle(cornerRadius: 9))
+                    }
+                }
+                HStack {
+                    Text("ANALOG X")
+                    Spacer()
+                    Text(controllerManager.analogX.formatted(.number.precision(.fractionLength(2))))
+                        .monospacedDigit()
+                }
+                HStack {
+                    Text("ANALOG Y")
+                    Spacer()
+                    Text(controllerManager.analogY.formatted(.number.precision(.fractionLength(2))))
+                        .monospacedDigit()
+                }
+                Text("Questa schermata verifica la lettura dei comandi iOS; non avvia ancora giochi PSP.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .font(.system(size: 11, weight: .medium))
+            .padding(14)
+            .background(panel, in: RoundedRectangle(cornerRadius: 14))
             sectionHeading("CONTROLLER", subtitle: "Stato del collegamento Bluetooth")
             HStack(spacing: 14) {
                 Image(systemName: "gamecontroller")
