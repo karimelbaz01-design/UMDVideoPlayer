@@ -818,16 +818,36 @@ struct ContentView: View {
               let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         do {
+            let size = try handle.seekToEnd()
+            try handle.seek(toOffset: 0)
             if ext == "cso" {
-                guard let header = try handle.read(upToCount: 24), header.count == 24,
+                guard size >= 24,
+                      let header = try handle.read(upToCount: 24), header.count == 24,
                       header.prefix(4) == Data([0x43, 0x49, 0x53, 0x4F]) else { return false }
                 let headerSize = UInt32(header[4]) |
                     (UInt32(header[5]) << 8) |
                     (UInt32(header[6]) << 16) |
                     (UInt32(header[7]) << 24)
-                return headerSize >= 24 && header[20] == 1
+                let blockSize = UInt32(header[16]) |
+                    (UInt32(header[17]) << 8) |
+                    (UInt32(header[18]) << 16) |
+                    (UInt32(header[19]) << 24)
+                let uncompressedSize = (0..<8).reduce(UInt64(0)) { result, index in
+                    result | (UInt64(header[8 + index]) << (8 * index))
+                }
+                // CSO v1: 2048-byte sectors, a valid index table and a nonempty disc.
+                guard headerSize >= 24, UInt64(headerSize) <= size,
+                      header[20] == 1, blockSize == 2048,
+                      uncompressedSize >= 2048,
+                      uncompressedSize % 2048 == 0 else { return false }
+                let blocks = uncompressedSize / 2048
+                guard blocks < (UInt64.max / 4) - 1 else { return false }
+                let indexBytes = (blocks + 1) * 4
+                return UInt64(headerSize) <= size &&
+                    indexBytes <= size - UInt64(headerSize)
             }
-            // ISO9660 primary volume descriptor starts at logical sector 16.
+            // ISO9660 primary volume descriptor begins at sector 16.
+            guard size >= 17 * 2048, size % 2048 == 0 else { return false }
             try handle.seek(toOffset: 16 * 2048)
             guard let descriptor = try handle.read(upToCount: 6),
                   descriptor.count == 6 else { return false }
