@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "disc_image.h"
 #include "iso9660.h"
 #include "sfo.h"
@@ -41,7 +42,27 @@ Java_com_karim_frame_DiscEngine_inspect(JNIEnv *env, jclass cls, jint fd, jlong 
             int has_video = iso_find(&volume, "UMD_VIDEO", &video) == 0;
             int has_game = iso_find(&volume, "PSP_GAME", &game) == 0;
             const char *kind = has_video ? "UMD Video" : has_game ? "PSP game" : "ISO9660 disc";
-            snprintf(result, sizeof(result), "%s | Volume: %.32s | Native ISO reader: OK | Playback engine: not yet connected", kind, volume.volume_id);
+            char title[128] = "";
+            char disc_id[64] = "";
+            iso_entry param;
+            const char *param_path = has_video ? "UMD_VIDEO/PARAM.SFO" : "PSP_GAME/PARAM.SFO";
+            if ((has_video || has_game) && iso_find(&volume, param_path, &param) == 0
+                && !param.is_dir && param.size >= 20 && param.size <= 262144) {
+                uint8_t *bytes = (uint8_t *)malloc(param.size);
+                if (bytes) {
+                    int64_t read_count = iso_read(&volume, &param, 0, bytes, param.size);
+                    if (read_count == (int64_t)param.size) {
+                        sfo_get_string(bytes, param.size, "TITLE", title, sizeof(title));
+                        sfo_get_string(bytes, param.size, "DISC_ID", disc_id, sizeof(disc_id));
+                    }
+                    free(bytes);
+                }
+            }
+            snprintf(result, sizeof(result),
+                     "Type: %s\\nVolume: %.32s\\nTitle: %.120s\\nDisc ID: %.56s\\n"
+                     "Native ISO/CSO/ZSO reader: OK\\nPlayback: not yet connected",
+                     kind, volume.volume_id, title[0] ? title : "Unknown",
+                     disc_id[0] ? disc_id : "Not provided");
         } else {
             snprintf(result, sizeof(result), "Disc image recognized, but ISO9660 volume could not be opened.");
         }
