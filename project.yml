@@ -87,6 +87,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: "UMD Video"
 
     info:
+      path: Info.plist
       properties:
         UIBackgroundModes:
           - audio
