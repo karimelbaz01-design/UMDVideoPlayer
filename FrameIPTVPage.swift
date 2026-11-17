@@ -87,30 +87,38 @@ struct FrameIPTVPage: View {
                     ScrollView {
                         LazyVStack(spacing: 9) {
                             ForEach(channels.filter { !favoritesOnly || $0.isFavorite }) { channel in
-                                Button { playingChannel = channel } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "play.tv.fill")
-                                            .font(.system(size: 19)).foregroundStyle(coral)
-                                            .frame(width: 42, height: 42)
-                                            .background(coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(channel.name).font(.system(size: 13, weight: .bold))
-                                            Text(channel.group.uppercased()).font(.system(size: 9, weight: .bold))
-                                                .foregroundStyle(.white.opacity(0.42))
+                                HStack(spacing: 10) {
+                                    Button { playingChannel = channel } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: "play.tv.fill")
+                                                .font(.system(size: 19)).foregroundStyle(coral)
+                                                .frame(width: 42, height: 42)
+                                                .background(coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(channel.name).font(.system(size: 13, weight: .bold))
+                                                Text(channel.group.uppercased()).font(.system(size: 9, weight: .bold))
+                                                    .foregroundStyle(.white.opacity(0.42))
+                                            }
+                                            Spacer(minLength: 4)
+                                            Image(systemName: "play.fill").font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
                                         }
-                                        Spacer()
-                                        Button {
-                                            toggleFavorite(channel)
-                                        } label: {
-                                            Image(systemName: channel.isFavorite ? "star.fill" : "star")
-                                                .foregroundStyle(channel.isFavorite ? coral : .white.opacity(0.4))
-                                                .padding(8)
-                                        }
-                                        Image(systemName: "play.fill").font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
+                                        .contentShape(Rectangle())
                                     }
-                                    .padding(10).background(panel, in: RoundedRectangle(cornerRadius: 15))
+                                    .buttonStyle(.plain)
+
+                                    Button {
+                                        toggleFavorite(channel)
+                                    } label: {
+                                        Image(systemName: channel.isFavorite ? "star.fill" : "star")
+                                            .foregroundStyle(channel.isFavorite ? coral : .white.opacity(0.4))
+                                            .frame(width: 38, height: 42)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(channel.isFavorite ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti")
                                 }
-                                .buttonStyle(.plain)
+                                .padding(10)
+                                .background(panel, in: RoundedRectangle(cornerRadius: 15))
                             }
                         }
                     }
@@ -186,26 +194,45 @@ struct FrameIPTVPage: View {
         var parsed: [IPTVChannel] = []
         var pendingTitle = "Canale"
         var pendingGroup = "Generale"
-        for rawLine in text.components(separatedBy: .newlines) {
+        let normalizedText = text.replacingOccurrences(of: "\\u{FEFF}", with: "")
+        for rawLine in normalizedText.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
-            if line.hasPrefix("#EXTINF") {
+
+            if line.hasPrefix("#EXTINF:") {
+                // Every channel starts with fresh metadata: never inherit the previous group.
+                pendingTitle = "Canale"
+                pendingGroup = "Generale"
+
                 if let comma = line.lastIndex(of: ",") {
-                    pendingTitle = String(line[line.index(after: comma)...]).trimmingCharacters(in: .whitespaces)
+                    let title = String(line[line.index(after: comma)...]).trimmingCharacters(in: .whitespaces)
+                    if !title.isEmpty { pendingTitle = title }
                 }
-                if let range = line.range(of: "group-title=\"") {
+                if let range = line.range(of: "group-title=\"", options: .caseInsensitive) {
                     let remainder = line[range.upperBound...]
-                    if let end = remainder.firstIndex(of: "\"") { pendingGroup = String(remainder[..<end]) }
+                    if let end = remainder.firstIndex(of: "\"") {
+                        let group = String(remainder[..<end]).trimmingCharacters(in: .whitespaces)
+                        if !group.isEmpty { pendingGroup = group }
+                    }
                 }
-            } else if !line.hasPrefix("#"), let resolved = URL(string: line, relativeTo: baseURL)?.absoluteURL,
-                      ["http", "https"].contains(resolved.scheme?.lowercased() ?? ""), resolved.host != nil {
+            } else if line.hasPrefix("#EXTGRP:") {
+                let group = String(line.dropFirst("#EXTGRP:".count)).trimmingCharacters(in: .whitespaces)
+                if !group.isEmpty { pendingGroup = group }
+            } else if !line.hasPrefix("#"),
+                      let resolved = URL(string: line, relativeTo: baseURL)?.absoluteURL,
+                      ["http", "https"].contains(resolved.scheme?.lowercased() ?? ""),
+                      resolved.host != nil {
                 parsed.append(IPTVChannel(name: pendingTitle, url: resolved.absoluteString, group: pendingGroup))
                 pendingTitle = "Canale"
                 pendingGroup = "Generale"
             }
         }
-        guard !parsed.isEmpty else { errorMessage = "Nessun canale HTTP/HTTPS valido trovato nella playlist."; return }
+        guard !parsed.isEmpty else {
+            errorMessage = "Nessun canale HTTP/HTTPS valido trovato. Controlla che sia una playlist IPTV M3U, non una pagina web o un singolo manifest HLS."
+            return
+        }
         channels = parsed
+        favoritesOnly = false
         persistChannels()
     }
 
