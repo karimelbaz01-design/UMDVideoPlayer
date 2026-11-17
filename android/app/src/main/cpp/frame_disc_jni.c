@@ -127,3 +127,113 @@ Java_com_karim_frame_DiscEngine_inspect(JNIEnv *env, jclass cls, jint fd, jlong 
     close(owned);
     return (*env)->NewStringUTF(env, result);
 }
+
+#include <media/NdkMediaCodec.h>
+#include <media/NdkMediaFormat.h>
+#include <android/native_window_jni.h>
+#include <time.h>
+
+JNIEXPORT jstring JNICALL
+Java_com_karim_frame_DiscEngine_previewVideo(JNIEnv *env, jclass cls, jint fd,
+                                               jlong length, jobject surface) {
+    (void)cls;
+    const char *message = "Unable to decode UMD video.";
+    if (fd < 0 || length < 32768 || !surface)
+        return (*env)->NewStringUTF(env, "Invalid video input.");
+    int owned = dup(fd);
+    if (owned < 0) return (*env)->NewStringUTF(env, "Cannot open disc.");
+    frame_file file = {owned};
+    image_file input = {&file, frame_read, (uint64_t)length};
+    umd_source source;
+    if (image_open(&source, &input) != 0) {
+        close(owned);
+        return (*env)->NewStringUTF(env, "Unsupported disc image.");
+    }
+    iso_volume volume;
+    if (iso_open(&volume, &source) == 0) {
+        iso_entry playlist_entry;
+        if (iso_find(&volume, "UMD_VIDEO/PLAYLIST.UMD", &playlist_entry) == 0
+            && playlist_entry.size > 16 && playlist_entry.size <= 4194304) {
+            uint8_t *data = malloc(playlist_entry.size);
+            umdv_playlist *playlist = malloc(sizeof(umdv_playlist));
+            if (data && playlist
+                && iso_read(&volume, &playlist_entry, 0, data, playlist_entry.size)
+                    == (int64_t)playlist_entry.size
+                && umdv_playlist_parse(data, playlist_entry.size, playlist) == 0
+                && playlist->title_count > 0) {
+                char path[96];
+                snprintf(path, sizeof(path), "UMD_VIDEO/STREAM/%.8s.MPS",
+                         playlist->titles[0].clip);
+                frame_clip clip = {&volume, {0}};
+                if (iso_find(&volume, path, &clip.clip) == 0) {
+                    ANativeWindow *window = ANativeWindow_fromSurface(env, surface);
+                    AMediaCodec *codec = AMediaCodec_createDecoderByType("video/avc");
+                    AMediaFormat *format = AMediaFormat_new();
+                    if (window && codec && format) {
+                        AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, "video/avc");
+                        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, 720);
+                        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, 480);
+                        if (AMediaCodec_configure(codec, format, window, NULL, 0) == AMEDIA_OK
+                            && AMediaCodec_start(codec) == AMEDIA_OK) {
+                            demux *reader = calloc(1, sizeof(demux));
+                            if (reader) {
+                                demux_init(reader, frame_clip_read, &clip);
+                                demux_select(reader, DEMUX_NONE, DEMUX_NONE);
+                                demux_unit unit;
+                                int frames = 0;
+                                int attempts = 0;
+                                int64_t first_pts = -1;
+                                struct timespec start;
+                                clock_gettime(CLOCK_MONOTONIC, &start);
+                                while (frames < 300 && attempts++ < 1200) {
+                                    int status = demux_next(reader, &unit);
+                                    if (status <= 0) break;
+                                    if (unit.type != DEMUX_VIDEO) continue;
+                                    ssize_t index = AMediaCodec_dequeueInputBuffer(codec, 100000);
+                                    if (index < 0) continue;
+                                    size_t capacity = 0;
+                                    uint8_t *buffer = AMediaCodec_getInputBuffer(codec, (size_t)index, &capacity);
+                                    if (!buffer || unit.size > capacity) {
+                                        AMediaCodec_queueInputBuffer(codec, (size_t)index, 0, 0, 0, 0);
+                                        continue;
+                                    }
+                                    memcpy(buffer, unit.data, unit.size);
+                                    int64_t pts = unit.pts == UINT64_MAX ? frames * 33333LL :
+                                                  (int64_t)(unit.pts * 1000000ULL / 90000ULL);
+                                    if (first_pts < 0) first_pts = pts;
+                                    AMediaCodec_queueInputBuffer(codec, (size_t)index, 0, unit.size,
+                                                                 pts - first_pts, 0);
+                                    AMediaCodecBufferInfo info;
+                                    ssize_t out;
+                                    while ((out = AMediaCodec_dequeueOutputBuffer(codec, &info, 0)) >= 0) {
+                                        struct timespec now;
+                                        clock_gettime(CLOCK_MONOTONIC, &now);
+                                        int64_t elapsed = (now.tv_sec - start.tv_sec) * 1000000LL
+                                            + (now.tv_nsec - start.tv_nsec) / 1000LL;
+                                        int64_t delay = info.presentationTimeUs - elapsed;
+                                        if (delay > 0 && delay < 200000) usleep((useconds_t)delay);
+                                        AMediaCodec_releaseOutputBuffer(codec, (size_t)out, true);
+                                    }
+                                    frames++;
+                                }
+                                message = frames ? "Video preview completed (audio not yet supported)."
+                                                 : "No decodable H264 frames found.";
+                                demux_free(reader);
+                                free(reader);
+                            }
+                            AMediaCodec_stop(codec);
+                        } else message = "Android H264 decoder could not start.";
+                    } else message = "Android H264 decoder unavailable.";
+                    if (format) AMediaFormat_delete(format);
+                    if (codec) AMediaCodec_delete(codec);
+                    if (window) ANativeWindow_release(window);
+                } else message = "UMD movie clip not found.";
+            } else message = "UMD playlist cannot be parsed.";
+            free(data);
+            free(playlist);
+        } else message = "No UMD Video playlist found.";
+    } else message = "Invalid UMD disc filesystem.";
+    image_close(&source, &input);
+    close(owned);
+    return (*env)->NewStringUTF(env, message);
+}
