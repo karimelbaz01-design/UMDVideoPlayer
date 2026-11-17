@@ -37,7 +37,8 @@ if missing:
 bridge = (root / "UMDVideoPlayer-Bridging-Header.h").read_text()
 if "UMDVideoPlayerBridge.h" not in bridge:
     sys.exit("ERROR: UMD bridge not imported into Swift")
-if "ios_umd_set_controller_input" not in bridge:
-    sys.exit("ERROR: UMD controller input declaration unavailable to Swift")
+header = (root / "UMDVideoPlayerBridge.h").read_text()
+if "ios_umd_set_controller_input" not in header:
+    sys.exit("ERROR: UMD controller input declaration missing from public bridge header")
 print(f"PASS: {len(paths)} native source paths, UMD core, Swift bridge, and web shell exist")
 print("NOTE: This is not a compiler test or proof of PSP/UMD playback.")
