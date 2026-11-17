@@ -819,7 +819,13 @@ struct ContentView: View {
         defer { try? handle.close() }
         do {
             if ext == "cso" {
-                return try handle.read(upToCount: 4) == Data([0x43, 0x49, 0x53, 0x4F])
+                guard let header = try handle.read(upToCount: 24), header.count == 24,
+                      header.prefix(4) == Data([0x43, 0x49, 0x53, 0x4F]) else { return false }
+                let headerSize = UInt32(header[4]) |
+                    (UInt32(header[5]) << 8) |
+                    (UInt32(header[6]) << 16) |
+                    (UInt32(header[7]) << 24)
+                return headerSize >= 24 && header[20] == 1
             }
             // ISO9660 primary volume descriptor starts at logical sector 16.
             try handle.seek(toOffset: 16 * 2048)
@@ -846,7 +852,7 @@ struct ContentView: View {
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
             do {
                 guard isSupportedPSPGameImage(url) else {
-                    importError = "File non valido: \\(url.lastPathComponent). Seleziona un'immagine ISO9660 o CSO riconosciuta."
+                    importError = "File non valido: \(url.lastPathComponent). Seleziona un'immagine ISO9660 o CSO riconosciuta."
                     continue
                 }
                 var destination = folder.appendingPathComponent(url.lastPathComponent)
