@@ -82,7 +82,13 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
-        if (fullscreenView != null) { webView.getWebChromeClient().onHideCustomView(); return; }
+        if (fullscreenView != null) {
+            setContentView(webView);
+            fullscreenView = null;
+            if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
+            fullscreenCallback = null;
+            return;
+        }
         if (webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
