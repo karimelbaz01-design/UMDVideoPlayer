@@ -27,6 +27,13 @@ jobs:
       - name: Checkout PPSSPP and nested dependencies
         run: bash scripts/prepare-psp-engine.sh
 
+      - name: Inspect upstream engine checkout
+        run: |
+          test -f .engine-work/ppsspp/CMakeLists.txt
+          test -f .engine-work/ppsspp/LICENSE.TXT
+          git -C .engine-work/ppsspp rev-parse HEAD
+          git -C .engine-work/ppsspp submodule status --recursive
+
       - name: Configure upstream iOS Simulator engine
         shell: bash
         run: |
