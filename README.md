@@ -9,7 +9,7 @@ FRAME is an iOS project with an original, contemporary interface inspired by the
 - **IPTV:** import local M3U playlists or load an authorized HTTP(S) playlist URL, parse channel names/groups, mark favorites, and play compatible streams through AVPlayer.
 - **FRAME Browser:** embedded WKWebView browser with search/address navigation, back/forward/reload, and controller focus navigation for many standard page controls.
 - **Library and settings:** imported content, controller status, playback preferences UI, and a proposed FRAME Premium plan.
-- **AirPlay:** AVPlayer can expose native external playback for compatible media. UMD Video output needs separate implementation and physical-device verification.
+- **Picture in Picture:** native AVPlayerViewController PiP support is being added for compatible local/direct media and IPTV playback; it requires device testing. UMD Video custom-engine PiP is not implemented yet.\n- **AirPlay:** AVPlayer can expose native external playback for compatible media. UMD Video output needs separate implementation and physical-device verification.
 
 ## Current code in this repository
 
@@ -18,7 +18,7 @@ FRAME is an iOS project with an original, contemporary interface inspired by the
 - Direct HTTP(S) media URL entries for AVPlayer-compatible files/streams.
 - UMD Video ISO import and ISO inspection through the pinned open-source UMD Player engine.
 - Initial iOS adapter for the upstream C playback core.
-- IPTV M3U playlist parsing, channel groups, favorites, remote playlist loading, and AVPlayer stream playback for compatible entries.
+- IPTV M3U playlist parsing, channel groups, favorites, remote playlist loading, and AVPlayer stream playback for compatible entries.\n- Native AVPlayerViewController wrapper configured for Picture in Picture and background audio for compatible AVPlayer content.
 - WKWebView browser with basic controller-driven focus movement.
 - Bluetooth controller discovery and initial input bridge.
 
@@ -28,7 +28,7 @@ A UI screen does not mean its complete engine is production-ready. PSP game emul
 
 The Premium panel is a product concept only. There is no live advertising SDK, StoreKit purchase flow, entitlement validation, or paid feature gating. Free users should retain good playback quality; Premium may remove ads and add optional convenience and quality controls only where the source/device support them.
 
-AirPlay via AVPlayer is intended for compatible normal media and IPTV streams. UMD Video uses a custom playback engine and needs a separate AirPlay path and testing.
+Picture in Picture and background playback are configured for compatible AVPlayer media and IPTV streams; real-device behavior still needs verification. UMD Video uses a custom playback engine and does not yet support PiP.\n\nAirPlay via AVPlayer is intended for compatible normal media and IPTV streams. UMD Video uses a custom playback engine and needs a separate AirPlay path and testing.
 
 ## Build and validation
 
