@@ -186,7 +186,7 @@ struct FrameIPTVPage: View {
                 if let error { errorMessage = error.localizedDescription; return }
                 if let response = response as? HTTPURLResponse,
                    !(200...299).contains(response.statusCode) {
-                    errorMessage = "Il server ha risposto con errore HTTP \\(response.statusCode)."
+                    errorMessage = "Il server ha risposto con errore HTTP \(response.statusCode)."
                     return
                 }
                 guard let data, data.count <= 5 * 1024 * 1024,
@@ -204,7 +204,7 @@ struct FrameIPTVPage: View {
         var parsed: [IPTVChannel] = []
         var pendingTitle = "Canale"
         var pendingGroup = "Generale"
-        let normalizedText = text.replacingOccurrences(of: "\\u{FEFF}", with: "")
+        let normalizedText = text.replacingOccurrences(of: "\u{FEFF}", with: "")
         for rawLine in normalizedText.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
@@ -243,7 +243,7 @@ struct FrameIPTVPage: View {
         }
 
         // Keep the user's favorites when the same playlist is imported or refreshed.
-        let favoriteURLs = Set(channels.filter(\\.isFavorite).map(\\.url))
+        let favoriteURLs = Set(channels.filter(\.isFavorite).map(\.url))
         channels = parsed.map { channel in
             IPTVChannel(
                 name: channel.name,
