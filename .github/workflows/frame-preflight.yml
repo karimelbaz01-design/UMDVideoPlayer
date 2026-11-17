@@ -1,0 +1,29 @@
+name: FRAME Repository Preflight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Check repository sources and embedded engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/validate-frame-sources.py
+          node --check web/app.js
+          python3 -m json.tool web/manifest.webmanifest >/dev/null
+          bash -n scripts/prepare-psp-engine.sh
+      - name: Report validation result
+        if: always()
+        run: echo "This checks repository consistency, NOT iOS compilation or PSP gameplay."
