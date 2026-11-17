@@ -9,6 +9,10 @@ final class PSPControllerManager: ObservableObject {
 
     @Published private(set) var connectedControllerName: String?
     @Published private(set) var isConnected = false
+    // Independent PSP game input snapshot; the UMD Video engine uses its own bridge.
+    @Published private(set) var gameButtons: UInt32 = 0
+    @Published private(set) var analogX: Float = 0
+    @Published private(set) var analogY: Float = 0
 
     private var controller: GCController?
     private var previousBrowserButtons: UInt32 = 0
@@ -46,6 +50,9 @@ final class PSPControllerManager: ObservableObject {
         guard let disconnected = notification.object as? GCController,
               disconnected === controller else { return }
         controller = nil
+        gameButtons = 0
+        analogX = 0
+        analogY = 0
         connectedControllerName = nil
         isConnected = false
         ios_umd_set_controller_input(0, 0)
@@ -56,6 +63,8 @@ final class PSPControllerManager: ObservableObject {
     }
 
     private func attach(_ newController: GCController) {
+        controller?.extendedGamepad?.valueChangedHandler = nil
+        controller?.microGamepad?.valueChangedHandler = nil
         controller = newController
         connectedControllerName = newController.vendorName ?? "Controller Bluetooth"
         isConnected = true
@@ -80,6 +89,8 @@ final class PSPControllerManager: ObservableObject {
 
         var buttons: UInt32 = 0
         var stickY: Int32 = 0
+        var xAxis: Float = 0
+        var yAxis: Float = 0
 
         if let pad = controller.extendedGamepad {
             if pad.dpad.up.isPressed { buttons |= 1 << 0 }
@@ -98,6 +109,8 @@ final class PSPControllerManager: ObservableObject {
             }
             let stickX = pad.leftThumbstick.xAxis.value
             let stickYValue = pad.leftThumbstick.yAxis.value
+            xAxis = abs(stickX) < 0.12 ? 0 : stickX
+            yAxis = abs(stickYValue) < 0.12 ? 0 : stickYValue
             if stickX < -0.55 { buttons |= 1 << 2 }
             if stickX > 0.55 { buttons |= 1 << 3 }
             if stickYValue > 0.55 { buttons |= 1 << 0 }
@@ -113,6 +126,10 @@ final class PSPControllerManager: ObservableObject {
             if pad.buttonMenu.isPressed { buttons |= 1 << 10 }
         }
 
+        // Future PSP game core consumes the full analog axes, not simulated D-pad presses.
+        gameButtons = buttons
+        analogX = xAxis
+        analogY = yAxis
         ios_umd_set_controller_input(buttons, stickY)
 
         let newlyPressed = buttons & ~previousBrowserButtons
