@@ -12,6 +12,7 @@ targets:
     sources:
       - ContentView.swift
       - UMDVideoPlayerApp.swift
+      - PSPControllerManager.swift
       - UMDVideoISOReader.swift
       - UMDVideoPlayerScreen.swift
       - UMDVideoPlayerBridge.c
@@ -87,6 +88,7 @@ targets:
     dependencies:
       - sdk: AudioToolbox.framework
       - sdk: AVFoundation.framework
+      - sdk: GameController.framework
       - sdk: CoreVideo.framework
       - sdk: CoreGraphics.framework
       - sdk: QuartzCore.framework
