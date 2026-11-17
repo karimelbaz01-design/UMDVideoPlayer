@@ -404,7 +404,8 @@ struct ContentView: View {
                     (8, "L"), (9, "R"), (10, "START"), (11, "SELECT")
                 ]
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: 8)], spacing: 8) {
-                    ForEach(buttonLabels, id: \.0) { item in
+                    ForEach(0..<buttonLabels.count, id: \.self) { index in
+                        let item = buttonLabels[index]
                         let pressed = (controllerManager.gameButtons & (UInt32(1) << item.0)) != 0
                         Text(item.1)
                             .font(.system(size: 11, weight: .bold, design: .rounded))
@@ -921,6 +922,12 @@ struct ContentView: View {
                     destination = folder.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
                 }
                 try FileManager.default.copyItem(at: url, to: destination)
+                // Recheck the copied image before displaying it as an imported game.
+                guard isSupportedPSPGameImage(destination) else {
+                    try? FileManager.default.removeItem(at: destination)
+                    importError = "La copia del file PSP non è valida: \(url.lastPathComponent)."
+                    continue
+                }
                 games.append(PSPGame(url: destination))
             } catch { importError = error.localizedDescription }
         }
