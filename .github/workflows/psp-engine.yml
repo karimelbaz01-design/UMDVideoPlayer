@@ -1,0 +1,59 @@
+name: Validate PPSSPP iOS engine
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ppsspp-simulator:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Checkout FRAME
+        uses: actions/checkout@v4
+
+      - name: Checkout PPSSPP and nested dependencies
+        run: bash scripts/prepare-psp-engine.sh
+
+      - name: Configure upstream iOS Simulator engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .engine-work/ppsspp
+          cmake -S . -B build-ios-sim -G Xcode \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/Toolchains/ios.cmake \
+            -DIOS_PLATFORM=SIMULATOR \
+            -DIOS_APP_STORE=ON
+          cmake -DSOURCE_DIR=. -DOUTPUT_DIR=build-ios-sim -P git-version.cmake
+
+      - name: Build upstream PPSSPP for iOS Simulator
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project .engine-work/ppsspp/build-ios-sim/PPSSPP.xcodeproj \
+            -scheme PPSSPP \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee ppsspp-build.log
+
+      - name: Upload compiler log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FRAME-PPSSPP-engine-build-log
+          path: ppsspp-build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload standalone upstream PPSSPP simulator build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PPSSPP-standalone-iOS-Simulator
+          path: .engine-work/ppsspp/build-ios-sim/Debug-iphonesimulator/PPSSPP.app
+          if-no-files-found: warn
+          retention-days: 7
