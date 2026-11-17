@@ -111,24 +111,13 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .alert("Attenzione", isPresented: Binding(
-            get: { importError != nil },
-            set: { if !$0 { importError = nil } }
+        .alert("Informazione", isPresented: Binding(
+            get: { importError != nil || selectedDisc != nil },
+            set: { if !$0 { importError = nil; selectedDisc = nil } }
         )) {
-            Button("OK", role: .cancel) { importError = nil }
+            Button("OK", role: .cancel) { importError = nil; selectedDisc = nil }
         } message: {
-            Text(importError ?? "")
-        }
-        .alert(
-            selectedDisc?.isUMDVideo == true ? "UMD Video riconosciuto" : "Immagine ISO",
-            isPresented: Binding(
-                get: { selectedDisc != nil },
-                set: { if !$0 { selectedDisc = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { selectedDisc = nil }
-        } message: {
-            Text(selectedDisc?.statusMessage ?? "")
+            Text(selectedDisc?.statusMessage ?? importError ?? "")
         }
         .onAppear(perform: loadLibrary)
         .preferredColorScheme(.dark)
@@ -369,6 +358,13 @@ struct ContentView: View {
     private var watchPage: some View {
         VStack(alignment: .leading, spacing: 22) {
             pageTitle("WATCH", eyebrow: "CINEMA & VIDEO", detail: "Film, serie, UMD Video e contenuti personali.")
+            Picker("Categoria video", selection: $selectedImportCategory) {
+                ForEach(VideoCategory.allCases) { category in
+                    Text(category.rawValue).tag(category)
+                }
+            }
+            .pickerStyle(.segmented)
+
             HStack(spacing: 10) {
                 actionTile("Importa video", symbol: "plus.rectangle.on.folder", tint: coral) {
                     selectedImportCategory = .films
@@ -503,7 +499,7 @@ struct ContentView: View {
             .padding(22)
             .background(ink.ignoresSafeArea())
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Chiudi") { showingLinkSheet = false }
                 }
             }
