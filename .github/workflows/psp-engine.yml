@@ -2,6 +2,16 @@ name: Validate PPSSPP iOS engine
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/psp-engine.yml"
+      - "scripts/prepare-psp-engine.sh"
+
+concurrency:
+  group: frame-ppsspp-ios-engine
+  cancel-in-progress: true
 
 permissions:
   contents: read
