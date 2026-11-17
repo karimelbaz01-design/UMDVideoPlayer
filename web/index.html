@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101018"><meta name="apple-mobile-web-app-capable" content="yes">
+<title>FRAME — PLAY & WATCH</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<style>
+:root{color-scheme:dark;--bg:#101018;--panel:#1d1c2a;--ink:#f6f2fa;--muted:#b1acbd;--lav:#c5a5fa;--coral:#ff917d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top right,#30253e,var(--bg) 55%);font:15px system-ui,-apple-system,sans-serif;color:var(--ink);min-height:100dvh}
+header{padding:24px 20px 12px;display:flex;justify-content:space-between;align-items:center}.brand{font-weight:900;letter-spacing:.24em;font-size:22px}.sub{color:var(--muted);font-size:11px;letter-spacing:.13em}
+main{max-width:900px;margin:auto;padding:12px 20px 110px}h1{font-size:32px;margin:6px 0 8px}h2{font-size:16px;letter-spacing:.08em;margin:25px 0 12px}p{color:var(--muted);line-height:1.5}.hero{background:linear-gradient(120deg,#3c2947,#232039);border:1px solid #51415f;padding:25px;border-radius:24px;margin:20px 0}
+.panel{background:var(--panel);border:1px solid #393448;border-radius:18px;padding:17px;margin:12px 0}.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.row>*{min-width:0}button,input{font:inherit}button{background:#3c334f;border:1px solid #625476;color:var(--ink);padding:12px 15px;border-radius:12px;cursor:pointer}button.primary{background:var(--lav);color:#17111f;font-weight:750;border:0}button:focus-visible,input:focus-visible{outline:3px solid var(--coral);outline-offset:3px}input[type=url]{width:100%;background:#11111c;border:1px solid #625476;border-radius:12px;color:white;padding:13px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#151420ee;backdrop-filter:blur(16px);display:flex;overflow-x:auto;gap:5px;padding:10px 12px max(10px,env(safe-area-inset-bottom));border-top:1px solid #383347;z-index:4}nav button{flex:1;min-width:72px;font-size:11px;padding:12px 6px;background:transparent;border:0}nav button[aria-current=page]{background:#483754;color:#fff}
+section[hidden]{display:none}video{width:100%;max-height:65dvh;background:black;border-radius:14px}small{color:var(--muted)}.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px;border-bottom:1px solid #363144}.item span{overflow-wrap:anywhere}#notice{min-height:22px;color:var(--coral)}
+</style>
+</head>
+<body>
+<header><div><div class="brand">FRAME</div><div class="sub">YOUR MEDIA. YOUR SPACE.</div></div><small>WEB PREVIEW</small></header>
+<main>
+<section id="home"><div class="hero"><div class="sub">ENTERTAINMENT, REIMAGINED</div><h1>Un solo universo.<br>PLAY & WATCH.</h1><p>La versione Web di FRAME mantiene la stessa identità. Alcuni motori nativi richiedono ancora integrazioni dedicate.</p><div class="row"><button class="primary" data-go="play">PLAY</button><button data-go="watch">WATCH</button></div></div><div class="panel">🎮 Joystick Bluetooth: usa L/R per cambiare sezione, croce direzionale per spostare il focus e ✕ per selezionare, se il browser espone il controller.</div></section>
+<section id="play" hidden><div class="sub">GAMING</div><h1>PLAY</h1><div class="hero"><h2>PSP GAMES</h2><p>Importa e organizza ISO/CSO. Il motore PSP non è disponibile in questa anteprima Web: i giochi non si avviano ancora.</p><button id="pickGames">IMPORTA ISO / CSO</button><input id="games" type="file" accept=".iso,.cso" multiple hidden></div><h2>LA TUA RACCOLTA</h2><div id="gameList" class="panel"></div><small>I file restano sul dispositivo: questa anteprima memorizza solo i nomi dei giochi.</small></section>
+<section id="watch" hidden><div class="sub">CINEMA</div><h1>WATCH</h1><div class="panel"><h2>VIDEO PERSONALI</h2><p>Apri un file video supportato da Safari oppure un collegamento diretto compatibile.</p><button id="pickVideo" class="primary">APRI VIDEO</button><input id="videoFile" type="file" accept="video/*" hidden><div style="height:12px"></div><input id="videoUrl" type="url" placeholder="https://.../video.mp4" aria-label="Indirizzo video"><div style="height:10px"></div><button id="openVideoUrl">RIPRODUCI LINK</button></div><div class="panel"><video id="player" controls playsinline></video></div><small>UMD Video ISO richiede un decoder dedicato; non è riproducibile in questa versione.</small></section>
+<section id="iptv" hidden><div class="sub">LIVE</div><h1>IPTV</h1><div class="panel"><p>Importa una playlist M3U autorizzata. I canali con flussi compatibili con Safari possono essere riprodotti nel player WATCH.</p><button id="pickPlaylist">IMPORTA M3U</button><input id="playlistFile" type="file" accept=".m3u,.m3u8,audio/x-mpegurl" hidden></div><div id="channelList" class="panel"></div></section>
+<section id="web" hidden><div class="sub">INTERNET</div><h1>BROWSER</h1><div class="panel"><p>Safari non consente di incorporare liberamente qualsiasi sito. I collegamenti si aprono in una nuova scheda.</p><input id="address" type="url" placeholder="https://example.com" aria-label="Indirizzo web"><div style="height:10px"></div><button id="openSite">APRI SITO</button></div></section>
+<section id="library" hidden><div class="sub">COLLECTION</div><h1>LIBRARY</h1><div class="panel"><h2>CONTENUTI</h2><p>La raccolta giochi importati appare in PLAY. Video e playlist selezionati restano disponibili solo durante questa sessione Web.</p></div></section>
+<section id="settings" hidden><div class="sub">PERSONALIZE</div><h1>SETTINGS</h1><div class="panel"><h2>CONTROLLER</h2><p id="padStatus">Controller non rilevato</p><p>Non vengono mostrati pulsanti virtuali PSP fuori dai giochi.</p></div></section>
+<p id="notice" role="status" aria-live="polite"></p>
+</main>
+<nav aria-label="Sezioni FRAME"><button data-go="home" aria-current="page">HOME</button><button data-go="play">PLAY</button><button data-go="watch">WATCH</button><button data-go="iptv">IPTV</button><button data-go="web">WEB</button><button data-go="library">LIBRARY</button><button data-go="settings">SETTINGS</button></nav>
+<script src="./app.js" defer></script>
+</body></html>
