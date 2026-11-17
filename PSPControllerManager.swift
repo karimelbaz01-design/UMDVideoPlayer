@@ -96,7 +96,13 @@ final class PSPControllerManager: ObservableObject {
             if #available(iOS 14.0, *), pad.buttonOptions?.isPressed == true {
                 buttons |= 1 << 11 // Select
             }
-            stickY = Int32(max(-127, min(127, Int(-pad.leftThumbstick.yAxis.value * 127))))
+            let stickX = pad.leftThumbstick.xAxis.value
+            let stickYValue = pad.leftThumbstick.yAxis.value
+            if stickX < -0.55 { buttons |= 1 << 2 }
+            if stickX > 0.55 { buttons |= 1 << 3 }
+            if stickYValue > 0.55 { buttons |= 1 << 0 }
+            if stickYValue < -0.55 { buttons |= 1 << 1 }
+            stickY = Int32(max(-127, min(127, Int(-stickYValue * 127))))
         } else if let pad = controller.microGamepad {
             if pad.dpad.up.isPressed { buttons |= 1 << 0 }
             if pad.dpad.down.isPressed { buttons |= 1 << 1 }
