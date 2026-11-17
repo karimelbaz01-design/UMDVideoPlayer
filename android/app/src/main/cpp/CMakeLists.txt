@@ -5,7 +5,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # First integration stage: compile the portable UMD ISO and codec engine
 # into Android. UI, audio, and video platform adapters are separate work.
-set(UMD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../UMDVideoCore")
+set(UMD_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../UMDVideoCore")
 if(NOT EXISTS "${UMD_ROOT}/src/core/iso9660.c")
     message(FATAL_ERROR "UMDVideoCore submodule missing; initialize submodules")
 endif()
