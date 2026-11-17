@@ -13,14 +13,13 @@ import android.webkit.WebResourceRequest;
 import android.net.Uri;
 import android.webkit.JavascriptInterface;
 import android.os.ParcelFileDescriptor;
-import android.database.Cursor;
-import android.provider.OpenableColumns;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewAssetLoader.AssetsPathHandler;
 import androidx.webkit.WebViewClientCompat;
 
 public final class MainActivity extends Activity {
     private WebView webView;
+    private final java.util.concurrent.ExecutorService discWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
     private ValueCallback<Uri[]> pendingFiles;
     private static final int FILE_REQUEST = 27;
     private static final int DISC_REQUEST = 28;
@@ -100,7 +99,11 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == DISC_REQUEST) {
-            if (resultCode == RESULT_OK && data != null && data.getData() != null) inspectDisc(data.getData());
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                final Uri selected = data.getData();
+                showDiscReport("Analisi nativa in corso…");
+                discWorker.execute(() -> inspectDisc(selected));
+            }
             return;
         }
         if (requestCode != FILE_REQUEST || pendingFiles == null) return;
@@ -118,8 +121,15 @@ public final class MainActivity extends Activity {
         } catch (Exception error) {
             message = "Disc inspection failed: " + error.getMessage();
         }
+        showDiscReport(message);
+    }
+
+    private void showDiscReport(String message) {
         String escaped = org.json.JSONObject.quote(message);
-        webView.evaluateJavascript("document.getElementById('discReport').textContent=" + escaped + ";", null);
+        runOnUiThread(() -> {
+            if (webView != null) webView.evaluateJavascript(
+                "document.getElementById('discReport').textContent=" + escaped + ";", null);
+        });
     }
 
     @Override public void onBackPressed() {
@@ -136,6 +146,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         if (pendingFiles != null) { pendingFiles.onReceiveValue(null); pendingFiles = null; }
+        discWorker.shutdownNow();
         webView.destroy();
         super.onDestroy();
     }
