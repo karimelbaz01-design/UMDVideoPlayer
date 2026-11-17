@@ -59,6 +59,12 @@ private struct LibraryVideo: Identifiable, Codable, Hashable {
     var url: URL? { URL(string: source) }
 }
 
+private struct PSPGame: Identifiable {
+    let id = UUID()
+    let url: URL
+    var title: String { url.deletingPathExtension().lastPathComponent }
+}
+
 struct ImportedDisc: Identifiable {
     let id = UUID()
     let name: String
@@ -72,6 +78,8 @@ struct ImportedDisc: Identifiable {
 struct ContentView: View {
     @StateObject private var controllerManager = PSPControllerManager.shared
     @State private var selectedTab: FrameTab = .home
+    @State private var showingGameImporter = false
+    @State private var games: [PSPGame] = []
     @State private var showingISOImporter = false
     @State private var showingVideoImporter = false
     @State private var showingLinkSheet = false
@@ -100,6 +108,12 @@ struct ContentView: View {
                 mainInterface
             }
         }
+        .fileImporter(
+            isPresented: $showingGameImporter,
+            allowedContentTypes: [.pspGameISO, .pspGameCSO],
+            allowsMultipleSelection: true,
+            onCompletion: handleGameImport
+        )
         .fileImporter(
             isPresented: $showingISOImporter,
             allowedContentTypes: [.isoImage],
@@ -340,6 +354,26 @@ struct ContentView: View {
             }
             .frame(minHeight: 205)
 
+            sectionHeading("I TUOI GIOCHI", subtitle: "Importazione ISO e CSO")
+            Button { showingGameImporter = true } label: {
+                Label("IMPORTA GIOCHI PSP", systemImage: "plus.rectangle.on.folder")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(maxWidth: .infinity).padding(15)
+                    .background(lavender.opacity(0.18), in: RoundedRectangle(cornerRadius: 14))
+            }
+            if games.isEmpty {
+                emptyMessage("Nessun gioco importato", detail: "Seleziona un file ISO o CSO dalla tua app File.")
+            } else {
+                ForEach(games) { game in
+                    HStack {
+                        Image(systemName: "gamecontroller.fill").foregroundStyle(lavender)
+                        Text(game.title).font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text("IN ATTESA DEL CORE").font(.system(size: 9)).foregroundStyle(.secondary)
+                    }
+                    .padding(12).background(panel, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
             sectionHeading("CONTROLLER", subtitle: "Stato del collegamento Bluetooth")
             HStack(spacing: 14) {
                 Image(systemName: "gamecontroller")
@@ -733,8 +767,37 @@ struct ContentView: View {
         .background(panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
     }
 
+    private func handleGameImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else {
+            if case .failure(let error) = result { importError = error.localizedDescription }
+            return
+        }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = documents.appendingPathComponent("PSPGames", isDirectory: true)
+        do { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        catch { importError = error.localizedDescription; return }
+        for url in urls {
+            let granted = url.startAccessingSecurityScopedResource()
+            defer { if granted { url.stopAccessingSecurityScopedResource() } }
+            do {
+                var destination = folder.appendingPathComponent(url.lastPathComponent)
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    destination = folder.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+                }
+                try FileManager.default.copyItem(at: url, to: destination)
+                games.append(PSPGame(url: destination))
+            } catch { importError = error.localizedDescription }
+        }
+    }
+
     private func loadLibrary() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let gameFolder = documents.appendingPathComponent("PSPGames", isDirectory: true)
+        if let gameFiles = try? FileManager.default.contentsOfDirectory(at: gameFolder, includingPropertiesForKeys: nil) {
+            games = gameFiles.filter { ["iso", "cso"].contains($0.pathExtension.lowercased()) }
+                .map { PSPGame(url: $0) }
+                .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
         if let data = UserDefaults.standard.data(forKey: "frame.videoLibrary.v1"),
            let saved = try? JSONDecoder().decode([LibraryVideo].self, from: data) {
             videos = saved.filter { item in
@@ -875,5 +938,7 @@ struct ContentView: View {
 }
 
 private extension UTType {
+    static let pspGameISO = UTType(filenameExtension: "iso") ?? .data
+    static let pspGameCSO = UTType(filenameExtension: "cso") ?? .data
     static let isoImage = UTType(filenameExtension: "iso") ?? .data
 }
