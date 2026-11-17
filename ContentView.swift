@@ -141,6 +141,17 @@ struct ContentView: View {
             Text(selectedDisc?.statusMessage ?? importError ?? "")
         }
         .onAppear(perform: loadLibrary)
+        .onReceive(NotificationCenter.default.publisher(for: .frameAppControllerAction)) { notification in
+            guard playingDisc == nil, playingVideo == nil,
+                  let action = notification.object as? String,
+                  let current = FrameTab.allCases.firstIndex(of: selectedTab) else { return }
+            let tabs = FrameTab.allCases
+            if action == "nextTab" {
+                selectedTab = tabs[(current + 1) % tabs.count]
+            } else if action == "previousTab" {
+                selectedTab = tabs[(current + tabs.count - 1) % tabs.count]
+            }
+        }
         .preferredColorScheme(.dark)
     }
 
