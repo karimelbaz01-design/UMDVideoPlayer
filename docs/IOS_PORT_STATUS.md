@@ -1,6 +1,6 @@
 # iOS port status
 
-Last engineering focus: make the native UMD Player engine callable from the SwiftUI iOS app, then establish a repeatable build and device-test path.
+Last engineering focus: stabilize the iOS Simulator build, correct media import behavior, and prepare the first physical-device test cycle.
 
 ## Implemented in the repository
 
@@ -18,7 +18,7 @@ Last engineering focus: make the native UMD Player engine callable from the Swif
 
 ## Not yet verified
 
-- A successful full iOS Simulator build of the current branch.
+- The latest simulator build is passing on the current validated commit; subsequent commits must pass CI again.
 - A successful playback session on an iPhone.
 - Real UMD Video ISO compatibility, including discs with multiple titles, audio tracks, subtitles, and interactive menus.
 - Frame pacing, memory use, audio interruptions, and thermal behavior on iPhone.
@@ -28,12 +28,12 @@ Do not mark playback as working until a known-good UMD Video ISO has been opened
 
 ## Immediate validation sequence
 
-1. Get the current GitHub Actions run to complete; fix compiler or linker errors before adding features.
-2. Confirm the macOS reference build and iOS Simulator target both pass.
-3. Run a small known-good UMD Video ISO in the simulator if the host supports the required media/file workflow.
-4. Test on a physical iPhone with a signed development build.
-5. Check playback start, audio, subtitles, touch navigation, pause/resume, seeking, chapter changes, title switching, exit, and reopening the same disc.
-6. Only then polish the interface and package an initial test build.
+1. Keep the iOS Simulator workflow green after each code change.
+2. Validate import and persistence for local videos, ISO images, and M3U playlists.
+3. Test a known-good UMD Video ISO on a physical iPhone using a signed development build.
+4. Check playback start, audio, subtitles, touch navigation, pause/resume, seeking, chapter changes, title switching, exit, and reopening the same disc.
+5. Integrate the PSP game emulator as a separate engine only after reviewing its license and iOS build requirements.
+6. Validate controller mapping, PiP, AirPlay, and background behavior on actual hardware.
 
 ## Platform notes
 
