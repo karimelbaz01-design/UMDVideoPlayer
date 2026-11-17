@@ -23,6 +23,8 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFiles;
     private static final int FILE_REQUEST = 27;
     private static final int DISC_REQUEST = 28;
+    private static final int VIDEO_REQUEST = 29;
+    private android.widget.FrameLayout previewLayer;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
 
@@ -83,6 +85,14 @@ public final class MainActivity extends Activity {
             }
         });
         webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface public void previewUmd() {
+                runOnUiThread(() -> {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.setType("*/*");
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    startActivityForResult(intent, VIDEO_REQUEST);
+                });
+            }
             @JavascriptInterface public void pickDisc() {
                 runOnUiThread(() -> {
                     Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -98,6 +108,11 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == VIDEO_REQUEST) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null)
+                startUmdPreview(data.getData());
+            return;
+        }
         if (requestCode == DISC_REQUEST) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 final Uri selected = data.getData();
@@ -109,6 +124,48 @@ public final class MainActivity extends Activity {
         if (requestCode != FILE_REQUEST || pendingFiles == null) return;
         pendingFiles.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
         pendingFiles = null;
+    }
+
+    private void startUmdPreview(Uri uri) {
+        android.widget.FrameLayout layer = new android.widget.FrameLayout(this);
+        layer.setBackgroundColor(android.graphics.Color.BLACK);
+        android.view.SurfaceView surface = new android.view.SurfaceView(this);
+        layer.addView(surface, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        android.widget.Button close = new android.widget.Button(this);
+        close.setText("CHIUDI ANTEPRIMA");
+        android.widget.FrameLayout.LayoutParams controls =
+            new android.widget.FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP | android.view.Gravity.RIGHT);
+        layer.addView(close, controls);
+        close.setOnClickListener(v -> closeUmdPreview());
+        previewLayer = layer;
+        setContentView(layer);
+        surface.getHolder().addCallback(new android.view.SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(android.view.SurfaceHolder holder) {
+                discWorker.execute(() -> {
+                    String result;
+                    try (ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(uri, "r")) {
+                        if (descriptor == null || descriptor.getStatSize() < 0)
+                            throw new IllegalStateException("File non accessibile");
+                        result = DiscEngine.previewVideo(descriptor.getFd(),
+                            descriptor.getStatSize(), holder.getSurface());
+                    } catch (Exception e) {
+                        result = "Anteprima non riuscita: " + e.getMessage();
+                    }
+                    final String report = result;
+                    runOnUiThread(() -> android.widget.Toast.makeText(this, report,
+                        android.widget.Toast.LENGTH_LONG).show());
+                });
+            }
+            @Override public void surfaceChanged(android.view.SurfaceHolder holder, int format, int width, int height) {}
+            @Override public void surfaceDestroyed(android.view.SurfaceHolder holder) {}
+        });
+    }
+
+    private void closeUmdPreview() {
+        if (previewLayer != null) {
+            previewLayer = null;
+            setContentView(webView);
+        }
     }
 
     private void inspectDisc(Uri uri) {
@@ -133,6 +190,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed() {
+        if (previewLayer != null) { closeUmdPreview(); return; }
         if (fullscreenView != null) {
             setContentView(webView);
             fullscreenView = null;
