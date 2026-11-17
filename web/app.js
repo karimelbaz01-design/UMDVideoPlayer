@@ -50,3 +50,6 @@ $('inspectFile').onchange=async e=>{
   }catch(err){out.textContent='Analisi non riuscita: '+err.message;}
   finally{e.target.value='';}
 };
+
+if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+$('player').addEventListener('error',()=>{const err=$('player').error;notice('Il video non è riproducibile in questo browser'+(err?' (errore '+err.code+')':'')+'. Prova un formato H.264/AAC compatibile.');});
