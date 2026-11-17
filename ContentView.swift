@@ -80,7 +80,7 @@ struct ContentView: View {
         }
         .fileImporter(
             isPresented: $showingImporter,
-            allowedContentTypes: [.isoImage, .data],
+            allowedContentTypes: [.isoImage],
             allowsMultipleSelection: true,
             onCompletion: handleImport
         )
