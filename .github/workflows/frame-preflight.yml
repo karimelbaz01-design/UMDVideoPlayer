@@ -24,6 +24,18 @@ jobs:
           node --check web/app.js
           python3 -m json.tool web/manifest.webmanifest >/dev/null
           bash -n scripts/prepare-psp-engine.sh
+      - name: Check UMD bridge C syntax on Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v clang
+          clang -std=c11 -fsyntax-only \
+            -I. \
+            -IUMDVideoCore/src \
+            -IUMDVideoCore/src/core \
+            -IUMDVideoCore/src/platform \
+            UMDVideoPlayerBridge.c
+
       - name: Parse native Swift sources on Linux
         shell: bash
         run: |
