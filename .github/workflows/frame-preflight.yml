@@ -24,6 +24,16 @@ jobs:
           node --check web/app.js
           python3 -m json.tool web/manifest.webmanifest >/dev/null
           bash -n scripts/prepare-psp-engine.sh
+      - name: Parse native Swift sources on Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v swiftc
+          swiftc -version
+          while IFS= read -r file; do
+            echo "Parsing $file"
+            swiftc -frontend -parse "$file"
+          done < <(find . -maxdepth 1 -name "*.swift" -type f | sort)
       - name: Report validation result
         if: always()
         run: echo "This checks repository consistency, NOT iOS compilation or PSP gameplay."
