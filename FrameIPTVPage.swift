@@ -283,7 +283,7 @@ private struct IPTVPlayerView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack {
-                Button(action: onClose) { Label("Indietro", systemImage: "chevron.left") }
+                Button { player?.pause(); player?.replaceCurrentItem(with: nil); player = nil; onClose() } label: { Label("Indietro", systemImage: "chevron.left") }
                 Spacer()
                 Text(channel.name).font(.system(size: 13, weight: .bold)).lineLimit(1)
             }
@@ -304,5 +304,10 @@ private struct IPTVPlayerView: View {
             }
         }
         .foregroundStyle(.white).background(.black)
+        .onDisappear {
+            player?.pause()
+            player?.replaceCurrentItem(with: nil)
+            player = nil
+        }
     }
 }
