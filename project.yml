@@ -85,6 +85,11 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "UMD Video"
 
+    info:
+      properties:
+        UIBackgroundModes:
+          - audio
+
     resources:
       - UMDVideoCore/LICENSE
       - UMDVideoCore/NOTICE
