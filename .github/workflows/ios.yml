@@ -1,4 +1,3 @@
-
 name: Build UMD Video Player
 
 on:
@@ -7,21 +6,39 @@ on:
     branches:
       - main
 
+# Keep the latest validation from being killed by a newer push.
+# GitHub-hosted macOS runners can take longer to become available during peak demand.
 concurrency:
   group: umd-video-ios-build
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  build-ios-simulator:
+    name: Build iOS Simulator app
     runs-on: macos-15
+    timeout-minutes: 60
+
     steps:
-      - name: Checkout repository
+      - name: Check out repository and playback engine
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
-      - name: Compile the UMD Video playback engine (macOS reference build)
-        run: make -C UMDVideoCore
+      - name: Verify playback engine checkout
+        run: |
+          git submodule status
+          test -f UMDVideoCore/src/platform/platform.h
+          test -f UMDVideoCore/src/app/main.c
+
+      - name: Show Apple build environment
+        run: |
+          xcodebuild -version
+          xcode-select -p
+          swift --version
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -29,18 +46,33 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build iOS app
+      - name: Build iOS Simulator app
+        shell: bash
         run: |
+          set -o pipefail
           xcodebuild \
             -project UMDVideoPlayer.xcodeproj \
             -scheme UMDVideoPlayer \
-            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log
 
-      - name: Upload app build
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: UMDVideoPlayer-build-log
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload iOS Simulator app
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: UMDVideoPlayer-iOS-Simulator
           path: build/Build/Products/Debug-iphonesimulator/UMDVideoPlayer.app
+          if-no-files-found: error
+          retention-days: 7
