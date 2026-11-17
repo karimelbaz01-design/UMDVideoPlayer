@@ -17,7 +17,35 @@ $('games').onchange=e=>{for(const f of e.target.files){if(/\.(iso|cso)$/i.test(f
 $('pickPlaylist').onclick=()=>$('playlistFile').click();
 $('playlistFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const data=await f.text();const lines=data.replace(/\r/g,'').split('\n');const channels=[];let label='Canale';for(const line of lines){const s=line.trim();if(s.startsWith('#EXTINF:')){label=s.split(',').slice(1).join(',').trim()||'Canale';}else if(s&&!s.startsWith('#')){try{const u=new URL(s);if(['http:','https:'].includes(u.protocol))channels.push({label,url:u.href});}catch{}label='Canale';}}const list=$('channelList');list.replaceChildren();for(const c of channels.slice(0,500)){const b=document.createElement('button');b.textContent=c.label;b.style.margin='5px';b.onclick=()=>play(c.url);list.append(b);}if(!channels.length)list.textContent='Nessun canale HTTP(S) valido trovato.';notice(channels.length+' canali caricati. Alcuni flussi potrebbero non essere supportati da Safari.');};
 $('openSite').onclick=()=>{try{const u=new URL($('address').value);if(!['https:','http:'].includes(u.protocol))throw Error();window.open(u.href,'_blank','noopener,noreferrer');}catch{notice('Inserisci un indirizzo HTTP(S) valido.');}};
-function pollGamepad(){const pads=navigator.getGamepads?.()||[];const pad=Array.from(pads).find(Boolean);$('padStatus').textContent=pad?'Controller: '+pad.id:'Controller non rilevato';if(pad){const down=pad.buttons.map(b=>b.pressed);const fresh=i=>down[i]&&!previousButtons[i];if(fresh(4))go(tabs[(tabs.indexOf(active)+tabs.length-1)%tabs.length]);if(fresh(5))go(tabs[(tabs.indexOf(active)+1)%tabs.length]);const move=fresh(12)?-1:fresh(13)?1:0;if(move){const elements=[...document.querySelectorAll('nav button,section:not([hidden]) button,section:not([hidden]) input')].filter(el=>el.offsetParent!==null);const idx=elements.indexOf(document.activeElement);elements[(idx+move+elements.length)%elements.length]?.focus();}if(fresh(0)&&document.activeElement instanceof HTMLElement)document.activeElement.click();previousButtons=down;}else previousButtons=[];requestAnimationFrame(pollGamepad);}
+let nextMoveAt=0;
+function pollGamepad(){
+  const pads=navigator.getGamepads?.()||[];
+  const pad=Array.from(pads).find(Boolean);
+  $('padStatus').textContent=pad?'Controller: '+pad.id:'Controller non rilevato';
+  if(pad){
+    const down=pad.buttons.map(b=>b.pressed),fresh=i=>down[i]&&!previousButtons[i];
+    if(fresh(4))go(tabs[(tabs.indexOf(active)+tabs.length-1)%tabs.length]);
+    if(fresh(5))go(tabs[(tabs.indexOf(active)+1)%tabs.length]);
+    const axisY=pad.axes?.[1]||0;
+    const up=down[12]||axisY<-.65,downward=down[13]||axisY>.65;
+    const move=up?-1:downward?1:0,now=performance.now();
+    if(move&&now>=nextMoveAt){
+      const elements=[...document.querySelectorAll('nav button,section:not([hidden]) button,section:not([hidden]) input:not([type=file])')].filter(el=>el.getClientRects().length>0);
+      const idx=elements.indexOf(document.activeElement);
+      elements[(idx+move+elements.length)%elements.length]?.focus();
+      nextMoveAt=now+(previousButtons[12]||previousButtons[13]?130:240);
+    }
+    if(!move)nextMoveAt=0;
+    if(fresh(0)&&document.activeElement instanceof HTMLElement){
+      const target=document.activeElement;
+      if(target.tagName==='BUTTON')target.click();
+      else if(target.tagName==='INPUT'&&target.type==='url')target.focus();
+    }
+    if(fresh(1)&&active!=='home')go('home');
+    previousButtons=down;
+  }else{previousButtons=[];nextMoveAt=0;}
+  requestAnimationFrame(pollGamepad);
+}
 if(navigator.getGamepads)requestAnimationFrame(pollGamepad);
 
 
