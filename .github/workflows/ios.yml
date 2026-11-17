@@ -6,11 +6,10 @@ on:
     branches:
       - main
 
-# Keep the latest validation from being killed by a newer push.
-# GitHub-hosted macOS runners can take longer to become available during peak demand.
+# Only the newest commit needs a simulator build; cancel stale queued or running validations.
 concurrency:
   group: umd-video-ios-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
