@@ -372,6 +372,11 @@ struct ContentView: View {
                         Text("IN ATTESA DEL CORE").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
                     .padding(12).background(panel, in: RoundedRectangle(cornerRadius: 12))
+                    .contextMenu {
+                        Button(role: .destructive) { removeGame(game) } label: {
+                            Label("Rimuovi gioco", systemImage: "trash")
+                        }
+                    }
                 }
             }
             sectionHeading("CONTROLLER", subtitle: "Stato del collegamento Bluetooth")
@@ -765,6 +770,21 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func removeGame(_ game: PSPGame) {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = documents.appendingPathComponent("PSPGames", isDirectory: true)
+        guard game.url.deletingLastPathComponent().standardizedFileURL == folder.standardizedFileURL else {
+            importError = "Il gioco non si trova nella cartella gestita da FRAME."
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: game.url)
+            games.removeAll { $0.id == game.id }
+        } catch {
+            importError = "Impossibile rimuovere il gioco: \(error.localizedDescription)"
+        }
     }
 
     private func handleGameImport(_ result: Result<[URL], Error>) {
