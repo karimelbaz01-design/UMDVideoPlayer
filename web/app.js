@@ -131,3 +131,15 @@ if (window.FrameNative && document.getElementById('inspectImage')) {
   nativeButton.onclick = () => window.FrameNative.pickDisc();
   document.getElementById('inspectImage').insertAdjacentElement('afterend', nativeButton);
 }
+
+if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
+  const watch = document.getElementById('watch');
+  if (watch) {
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'primary';
+    preview.textContent = 'ANTEPRIMA UMD VIDEO (SPERIMENTALE, SENZA AUDIO)';
+    preview.addEventListener('click', () => window.FrameNative.previewUmd());
+    watch.insertBefore(preview, watch.querySelector('.panel'));
+  }
+}
