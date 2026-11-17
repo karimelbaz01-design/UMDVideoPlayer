@@ -11,6 +11,7 @@ final class PSPControllerManager: ObservableObject {
     @Published private(set) var isConnected = false
 
     private var controller: GCController?
+    private var previousBrowserButtons: UInt32 = 0
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -48,6 +49,7 @@ final class PSPControllerManager: ObservableObject {
         connectedControllerName = nil
         isConnected = false
         ios_umd_set_controller_input(0, 0)
+        previousBrowserButtons = 0
         if let replacement = GCController.controllers().first {
             attach(replacement)
         }
@@ -106,5 +108,22 @@ final class PSPControllerManager: ObservableObject {
         }
 
         ios_umd_set_controller_input(buttons, stickY)
+
+        let newlyPressed = buttons & ~previousBrowserButtons
+        previousBrowserButtons = buttons
+        if newlyPressed & (1 << 0) != 0 { postBrowserAction("up") }
+        if newlyPressed & (1 << 1) != 0 { postBrowserAction("down") }
+        if newlyPressed & (1 << 2) != 0 { postBrowserAction("left") }
+        if newlyPressed & (1 << 3) != 0 { postBrowserAction("right") }
+        if newlyPressed & (1 << 4) != 0 { postBrowserAction("select") }
+        if newlyPressed & (1 << 5) != 0 { postBrowserAction("back") }
     }
+
+    private func postBrowserAction(_ action: String) {
+        NotificationCenter.default.post(name: .frameBrowserControllerAction, object: action)
+    }
+}
+
+extension Notification.Name {
+    static let frameBrowserControllerAction = Notification.Name("FRAMEBrowserControllerAction")
 }
