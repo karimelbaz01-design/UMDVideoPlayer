@@ -122,6 +122,7 @@ struct FrameIPTVPage: View {
                             }
                         }
                     }
+                    .frame(height: 420)
                 }
                 Text("FRAME riproduce flussi compatibili e autorizzati. La disponibilità dipende dal formato, dal provider e da eventuali restrizioni del servizio.")
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.38))
@@ -268,7 +269,9 @@ private struct IPTVPlayerView: View {
                 Text(channel.name).font(.system(size: 13, weight: .bold)).lineLimit(1)
             }
             if let player {
-                FrameAVPlayerView(player: player).onAppear { player.play() }
+                FrameAVPlayerView(player: player)
+                    .frame(height: 230)
+                    .onAppear { player.play() }
             } else {
                 ProgressView("Connessione al canale…").tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
