@@ -1,6 +1,8 @@
 #ifndef UMD_VIDEO_PLAYER_BRIDGE_H
 #define UMD_VIDEO_PLAYER_BRIDGE_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
