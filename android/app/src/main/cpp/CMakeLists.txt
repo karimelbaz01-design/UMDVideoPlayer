@@ -23,3 +23,8 @@ target_include_directories(frame_umd_core PRIVATE
 )
 target_compile_definitions(frame_umd_core PRIVATE _POSIX_C_SOURCE=200809L)
 target_link_libraries(frame_umd_core m)
+
+# JNI bridge: native ISO/CSO/ZSO reader using the upstream disc-image engine.
+add_library(frame_disc_jni SHARED frame_disc_jni.c)
+target_include_directories(frame_disc_jni PRIVATE "${UMD_ROOT}/src/core")
+target_link_libraries(frame_disc_jni frame_umd_core z m log)
