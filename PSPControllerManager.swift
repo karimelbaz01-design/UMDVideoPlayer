@@ -161,6 +161,12 @@ final class PSPControllerManager: ObservableObject {
         if newlyPressed & (1 << 3) != 0 { postBrowserAction("right") }
         if newlyPressed & (1 << 4) != 0 { postBrowserAction("select") }
         if newlyPressed & (1 << 5) != 0 { postBrowserAction("back") }
+        if newlyPressed & (1 << 8) != 0 { postAppAction("previousTab") }
+        if newlyPressed & (1 << 9) != 0 { postAppAction("nextTab") }
+    }
+
+    private func postAppAction(_ action: String) {
+        NotificationCenter.default.post(name: .frameAppControllerAction, object: action)
     }
 
     private func postBrowserAction(_ action: String) {
@@ -170,4 +176,5 @@ final class PSPControllerManager: ObservableObject {
 
 extension Notification.Name {
     static let frameBrowserControllerAction = Notification.Name("FRAMEBrowserControllerAction")
+    static let frameAppControllerAction = Notification.Name("FRAMEAppControllerAction")
 }
