@@ -44,6 +44,14 @@ public final class MainActivity extends Activity {
             .addPathHandler("/assets/", new AssetsPathHandler(this))
             .build();
         webView.setWebViewClient(new WebViewClientCompat() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri url = request.getUrl();
+                if ("appassets.androidplatform.net".equals(url.getHost()) && "https".equals(url.getScheme())) return false;
+                if ("https".equals(url.getScheme()) || "http".equals(url.getScheme())) {
+                    try { startActivity(new Intent(Intent.ACTION_VIEW, url)); } catch (Exception ignored) {}
+                }
+                return true;
+            }
             @Override public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return loader.shouldInterceptRequest(request.getUrl());
             }
