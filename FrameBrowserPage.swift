@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UIKit
 
 @MainActor
 private final class FrameBrowserModel: ObservableObject {
