@@ -306,7 +306,7 @@ struct ContentView: View {
                     isUMDVideo: inspection != nil,
                     streamCount: inspection?.streamFiles.count ?? 0,
                     statusMessage: inspection.map {
-                        "UMD Video riconosciuto: \\($0.streamFiles.count) tracce MPS."
+                        "UMD Video riconosciuto: \($0.streamFiles.count) tracce MPS."
                     } ?? "ISO importata. Il motore proverà a riconoscere il disco all'avvio."
                 )
             }
