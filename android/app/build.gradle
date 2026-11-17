@@ -3,6 +3,8 @@ plugins { id 'com.android.application' }
 android {
     namespace 'com.karim.frame'
     compileSdk 35
+    ndkVersion '27.2.12479018'
+    externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt' } }
 
     defaultConfig {
         applicationId 'com.karim.frame'
@@ -10,6 +12,7 @@ android {
         targetSdk 35
         versionCode 1
         versionName '0.1.0'
+        externalNativeBuild { cmake { cppFlags '-std=c++17' } }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
