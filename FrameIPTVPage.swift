@@ -179,11 +179,20 @@ struct FrameIPTVPage: View {
             errorMessage = "Inserisci un link HTTP o HTTPS valido."
             return
         }
-        URLSession.shared.dataTask(with: url) { data, _, error in
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 if let error { errorMessage = error.localizedDescription; return }
-                guard let data, let text = String(data: data, encoding: .utf8) else {
-                    errorMessage = "La playlist non è leggibile come testo UTF-8."; return
+                if let response = response as? HTTPURLResponse,
+                   !(200...299).contains(response.statusCode) {
+                    errorMessage = "Il server ha risposto con errore HTTP \\(response.statusCode)."
+                    return
+                }
+                guard let data, data.count <= 5 * 1024 * 1024,
+                      let text = String(data: data, encoding: .utf8) else {
+                    errorMessage = "La playlist non è leggibile come testo UTF-8 oppure supera il limite di 5 MB."
+                    return
                 }
                 applyPlaylist(text, baseURL: url.deletingLastPathComponent())
                 showingURLSheet = false
@@ -232,7 +241,17 @@ struct FrameIPTVPage: View {
             errorMessage = "Nessun canale HTTP/HTTPS valido trovato. Controlla che sia una playlist IPTV M3U, non una pagina web o un singolo manifest HLS."
             return
         }
-        channels = parsed
+
+        // Keep the user's favorites when the same playlist is imported or refreshed.
+        let favoriteURLs = Set(channels.filter(\\.isFavorite).map(\\.url))
+        channels = parsed.map { channel in
+            IPTVChannel(
+                name: channel.name,
+                url: channel.url,
+                group: channel.group,
+                isFavorite: favoriteURLs.contains(channel.url)
+            )
+        }
         favoritesOnly = false
         persistChannels()
     }
