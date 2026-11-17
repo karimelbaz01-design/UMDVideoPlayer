@@ -380,7 +380,7 @@ struct ContentView: View {
 
             HStack(spacing: 10) {
                 actionTile("Importa video", symbol: "plus.rectangle.on.folder", tint: coral) {
-                    selectedImportCategory = .films
+                    // Keep the category selected in the segmented picker.
                     showingVideoImporter = true
                 }
                 actionTile("Aggiungi link", symbol: "link", tint: lavender) {
