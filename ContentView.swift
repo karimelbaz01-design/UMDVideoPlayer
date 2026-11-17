@@ -365,7 +365,12 @@ struct ContentView: View {
             if games.isEmpty {
                 emptyMessage("Nessun gioco importato", detail: "Seleziona un file ISO o CSO dalla tua app File.")
             } else {
-                ForEach(games.sorted { favoriteGamePaths.contains($0.url.path) && !favoriteGamePaths.contains($1.url.path) }) { game in
+                ForEach(games.sorted { left, right in
+                    let leftFavorite = favoriteGamePaths.contains(left.url.path)
+                    let rightFavorite = favoriteGamePaths.contains(right.url.path)
+                    if leftFavorite != rightFavorite { return leftFavorite }
+                    return left.title.localizedStandardCompare(right.title) == .orderedAscending
+                }) { game in
                     HStack {
                         Image(systemName: "gamecontroller.fill").foregroundStyle(lavender)
                         Text(game.title).font(.system(size: 13, weight: .semibold))
