@@ -12,6 +12,26 @@ static int ios_touch_down;
 static int ios_touch_x;
 static int ios_touch_y;
 
+static CGRect ios_content_rect(UIView *view)
+{
+    CGRect bounds = view.bounds;
+    if (CGRectIsEmpty(bounds))
+        return CGRectZero;
+
+    const CGFloat aspect = 960.0 / 544.0;
+    CGFloat width = bounds.size.width;
+    CGFloat height = bounds.size.height;
+
+    if (width / height > aspect)
+        width = height * aspect;
+    else
+        height = width / aspect;
+
+    return CGRectMake(CGRectGetMidX(bounds) - width / 2.0,
+                      CGRectGetMidY(bounds) - height / 2.0,
+                      width, height);
+}
+
 @interface UMDVideoSurface ()
 @property(nonatomic, strong) CALayer *videoLayer;
 @property(nonatomic, strong) CALayer *subtitleLayer;
@@ -47,17 +67,21 @@ static int ios_touch_y;
 - (void)layoutSubviews
 {
     [super layoutSubviews];
-    if (CGRectIsEmpty(self.videoLayer.frame))
-        self.videoLayer.frame = self.bounds;
+    self.uiLayer.frame = ios_content_rect(self);
 }
 
-- (void)updateTouch:(UITouch *)touch
+- (BOOL)updateTouch:(UITouch *)touch
 {
     CGPoint p = [touch locationInView:self];
-    CGFloat w = MAX(self.bounds.size.width, 1);
-    CGFloat h = MAX(self.bounds.size.height, 1);
-    ios_touch_x = (int)(p.x * 960.0 / w);
-    ios_touch_y = (int)(p.y * 544.0 / h);
+    CGRect content = ios_content_rect(self);
+    if (CGRectIsEmpty(content) || !CGRectContainsPoint(content, p))
+        return NO;
+
+    ios_touch_x = (int)((p.x - CGRectGetMinX(content)) * 960.0 / content.size.width);
+    ios_touch_y = (int)((p.y - CGRectGetMinY(content)) * 544.0 / content.size.height);
+    ios_touch_x = MAX(0, MIN(959, ios_touch_x));
+    ios_touch_y = MAX(0, MIN(543, ios_touch_y));
+    return YES;
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -65,8 +89,7 @@ static int ios_touch_y;
     (void)event;
     UITouch *touch = touches.anyObject;
     if (touch) {
-        [self updateTouch:touch];
-        ios_touch_down = 1;
+        ios_touch_down = [self updateTouch:touch] ? 1 : 0;
     }
 }
 
@@ -75,7 +98,7 @@ static int ios_touch_y;
     (void)event;
     UITouch *touch = touches.anyObject;
     if (touch)
-        [self updateTouch:touch];
+        ios_touch_down = [self updateTouch:touch] ? 1 : 0;
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
@@ -112,9 +135,9 @@ static CGRect screen_rect(plat_rect r)
 {
     if (!active_surface)
         return CGRectZero;
-    CGRect b = active_surface.bounds;
-    return CGRectMake(r.x * b.size.width,
-                      (1.0 - r.y - r.h) * b.size.height,
+    CGRect b = ios_content_rect(active_surface);
+    return CGRectMake(b.origin.x + r.x * b.size.width,
+                      b.origin.y + (1.0 - r.y - r.h) * b.size.height,
                       r.w * b.size.width,
                       r.h * b.size.height);
 }
@@ -218,7 +241,7 @@ void plat_present(plat_frame *frame, const plat_present_info *info)
     active_surface.uiLayer.contents = ui ? (__bridge id)ui : nil;
     if (ui)
         CGImageRelease(ui);
-    active_surface.uiLayer.frame = active_surface.bounds;
+    active_surface.uiLayer.frame = ios_content_rect(active_surface);
 
     [CATransaction commit];
 }
