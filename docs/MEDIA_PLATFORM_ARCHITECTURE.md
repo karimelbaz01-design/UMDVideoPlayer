@@ -124,3 +124,51 @@ Avoid copying Netflix or PPSSPP. Use a distinct retro-contemporary identity:
 ## Current verified baseline
 
 The repository's latest recorded iOS Simulator workflow build at the time this document was added succeeded. This is a compile/build check only; it does not verify playback on a physical iPhone or support for every media format.
+
+
+## FRAME premium and sustainable monetization
+
+The free tier must remain genuinely useful and must not deliberately degrade basic playback:
+- Keep a good default picture and audio experience for all users, bounded only by the source, device, network, codec, and available bandwidth.
+- No artificial low-resolution cap solely to pressure users into paying.
+- Core access to personal local media, UMD Video, and compatible user-provided playlists should not be crippled by an ad paywall.
+- Ads, if introduced, should be clearly labeled, limited, non-intrusive, and never inserted over video playback or used to disguise third-party content.
+- Never target ads using sensitive personal data or infer sensitive traits.
+
+FRAME Premium may offer:
+- Ad-free app experience.
+- Optional advanced playback controls and convenience features.
+- Additional library customization and organization.
+- Advanced quality controls only where the source and device genuinely support them; free users still retain good automatic quality.
+- Optional cloud sync only if a secure, privacy-conscious backend is later designed and funded.
+
+Do not promise 4K or a higher resolution when the original stream, decoder, display, or network cannot provide it. Quality selection should be source-aware and explain when the source is the limiting factor.
+
+Monetization should be implemented only after the free product is stable:
+1. Validate the app platform distribution rules and current Apple advertising / in-app purchase requirements.
+2. Prefer a transparent subscription or one-time purchase for Premium, with clear benefits, renewal terms, restore-purchases flow, and cancellation guidance.
+3. If ads are used, evaluate a reputable ad SDK, privacy disclosures, consent requirements in applicable regions (including EU/Italy), age suitability, tracking permissions, and App Store privacy labels before integration.
+4. Never serve ads inside the PSP emulator, over the video image, or in a way that imitates system controls.
+5. Keep an accessible settings page describing Free and Premium without implying that billing is active until StoreKit and entitlement validation are implemented.
+
+## IPTV implementation rules
+
+FRAME IPTV accepts user-provided M3U playlists and HTTP(S) playlist URLs. Parse EXTINF metadata and channel URLs, validate each stream URL, preserve group labels, and let users favorite channels. The player uses AVPlayer for compatible streams and exposes the system external playback route where supported.
+
+An M3U channel list and an HLS .m3u8 media manifest are related text formats but serve different purposes. A playlist import should not claim that every entry is playable. Provider authentication, DRM, geo-restrictions, codec support, and server availability can prevent playback. Do not scrape sites, extract hidden streams, or bypass service controls.
+
+## Browser and controller navigation
+
+The embedded browser uses WKWebView for normal web navigation and inline playback where the site and iOS permit it. It is not a universal streaming-site compatibility layer. Browser controller navigation moves focus between visible interactive elements and activates the focused element; site-specific controls may still require touch or keyboard input. External sites retain their own terms, sign-in, DRM, and playback restrictions.
+
+## Feature status discipline
+
+A visible UI section is not proof that its underlying engine is complete. Track each capability as one of:
+- Designed
+- UI implemented
+- Core integrated
+- Simulator build verified
+- Physical-device tested
+- Distribution-ready
+
+Do not describe PSP game emulation, UMD AirPlay, universal web playback, paid entitlements, or ad delivery as operational until each has passed its relevant integration and device tests.
