@@ -14,3 +14,7 @@ Run the GitHub Action **Build FRAME Android APK** on branch `android/frame-port`
 - No Android device runtime test has yet been performed.
 
 The build intentionally preserves FRAME's existing web appearance and capabilities instead of pretending that metadata scanning equals emulation.
+
+## Older Samsung Galaxy devices
+
+Minimum supported Android API is 21 (Android 5.0), including 32-bit `armeabi-v7a` devices such as an updated Galaxy S5. The original Galaxy S5 firmware with Android 4.4 (API 19) is not supported by this build. Both `armeabi-v7a` and `arm64-v8a` native ABIs are packaged; Android System WebView must be recent enough for the web UI. Building an APK does not establish on-device runtime compatibility.
