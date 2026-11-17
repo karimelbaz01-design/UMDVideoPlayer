@@ -19,7 +19,7 @@ on:
 # Only the newest commit needs a simulator build; cancel stale queued or running validations.
 concurrency:
   group: umd-video-ios-build
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
