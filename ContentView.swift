@@ -687,7 +687,13 @@ struct ContentView: View {
 
     private func discRow(_ disc: ImportedDisc) -> some View {
         Button {
-            if disc.isISO { playingDisc = disc } else { selectedDisc = disc }
+            // Only launch the custom UMD engine for an ISO whose UMD_VIDEO
+            // directory and playlist were successfully identified.
+            if disc.isUMDVideo {
+                playingDisc = disc
+            } else {
+                selectedDisc = disc
+            }
         } label: {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 12)
@@ -696,13 +702,15 @@ struct ContentView: View {
                     .overlay(Image(systemName: "opticaldisc.fill").font(.system(size: 22)).foregroundStyle(.orange))
                 VStack(alignment: .leading, spacing: 5) {
                     Text(disc.name).font(.system(size: 13, weight: .bold)).lineLimit(2)
-                    Text(disc.isUMDVideo ? "UMD VIDEO • \(disc.streamCount) TRACCE" : "ISO DA VERIFICARE")
+                    Text(disc.isUMDVideo ? "UMD VIDEO • \(disc.streamCount) TRACCE" : "ISO NON RICONOSCIUTA")
                         .font(.system(size: 8, weight: .bold, design: .rounded))
                         .tracking(0.8)
                         .foregroundStyle(.white.opacity(0.42))
                 }
                 Spacer()
-                Image(systemName: "play.fill").font(.system(size: 12)).foregroundStyle(coral)
+                Image(systemName: disc.isUMDVideo ? "play.fill" : "info.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(disc.isUMDVideo ? coral : .white.opacity(0.5))
             }
             .padding(10)
             .background(panel, in: RoundedRectangle(cornerRadius: 16))
