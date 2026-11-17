@@ -152,7 +152,7 @@ public final class MainActivity extends Activity {
                         result = "Anteprima non riuscita: " + e.getMessage();
                     }
                     final String report = result;
-                    runOnUiThread(() -> android.widget.Toast.makeText(this, report,
+                    runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, report,
                         android.widget.Toast.LENGTH_LONG).show());
                 });
             }
