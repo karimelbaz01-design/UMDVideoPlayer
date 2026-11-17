@@ -1,0 +1,21 @@
+'use strict';
+const tabs=['home','play','watch','iptv','web','library','settings'];
+const $=id=>document.getElementById(id);
+let active='home',objectURL=null,previousButtons=[];
+const notice=message=>{$('notice').textContent=message;};
+function go(tab){if(!tabs.includes(tab))return;active=tab;for(const id of tabs)$(id).hidden=id!==tab;document.querySelectorAll('nav [data-go]').forEach(b=>{if(b.dataset.go===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});window.scrollTo(0,0);}
+document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+function play(src,temporary=false){if(objectURL){URL.revokeObjectURL(objectURL);objectURL=null;}if(temporary)objectURL=src;$('player').src=src;go('watch');$('player').play().catch(()=>notice('Tocca Play per avviare il video.'));}
+$('pickVideo').onclick=()=>$('videoFile').click();
+$('videoFile').onchange=e=>{const f=e.target.files[0];if(f)play(URL.createObjectURL(f),true);};
+$('openVideoUrl').onclick=()=>{const url=$('videoUrl').value.trim();try{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error();play(u.href);}catch{notice('Inserisci un indirizzo HTTP(S) valido.');}};
+$('pickGames').onclick=()=>$('games').click();
+const games=new Set(JSON.parse(localStorage.getItem('frame.web.games.v1')||'[]'));
+function renderGames(){const list=$('gameList');list.replaceChildren();if(!games.size){list.textContent='Nessun gioco importato';return;}for(const name of [...games].sort()){const row=document.createElement('div');row.className='item';const label=document.createElement('span');label.textContent=name;const remove=document.createElement('button');remove.textContent='Rimuovi';remove.onclick=()=>{games.delete(name);localStorage.setItem('frame.web.games.v1',JSON.stringify([...games]));renderGames();};row.append(label,remove);list.append(row);}}
+renderGames();
+$('games').onchange=e=>{for(const f of e.target.files){if(/\.(iso|cso)$/i.test(f.name))games.add(f.name);}localStorage.setItem('frame.web.games.v1',JSON.stringify([...games]));renderGames();notice('Nomi aggiunti. Il browser non conserva le immagini PSP.');e.target.value='';};
+$('pickPlaylist').onclick=()=>$('playlistFile').click();
+$('playlistFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const data=await f.text();const lines=data.replace(/\r/g,'').split('\n');const channels=[];let label='Canale';for(const line of lines){const s=line.trim();if(s.startsWith('#EXTINF:')){label=s.split(',').slice(1).join(',').trim()||'Canale';}else if(s&&!s.startsWith('#')){try{const u=new URL(s);if(['http:','https:'].includes(u.protocol))channels.push({label,url:u.href});}catch{}label='Canale';}}const list=$('channelList');list.replaceChildren();for(const c of channels.slice(0,500)){const b=document.createElement('button');b.textContent=c.label;b.style.margin='5px';b.onclick=()=>play(c.url);list.append(b);}if(!channels.length)list.textContent='Nessun canale HTTP(S) valido trovato.';notice(channels.length+' canali caricati. Alcuni flussi potrebbero non essere supportati da Safari.');};
+$('openSite').onclick=()=>{try{const u=new URL($('address').value);if(!['https:','http:'].includes(u.protocol))throw Error();window.open(u.href,'_blank','noopener,noreferrer');}catch{notice('Inserisci un indirizzo HTTP(S) valido.');}};
+function pollGamepad(){const pads=navigator.getGamepads?.()||[];const pad=Array.from(pads).find(Boolean);$('padStatus').textContent=pad?'Controller: '+pad.id:'Controller non rilevato';if(pad){const down=pad.buttons.map(b=>b.pressed);const fresh=i=>down[i]&&!previousButtons[i];if(fresh(4))go(tabs[(tabs.indexOf(active)+tabs.length-1)%tabs.length]);if(fresh(5))go(tabs[(tabs.indexOf(active)+1)%tabs.length]);const move=fresh(12)?-1:fresh(13)?1:0;if(move){const elements=[...document.querySelectorAll('nav button,section:not([hidden]) button,section:not([hidden]) input')].filter(el=>el.offsetParent!==null);const idx=elements.indexOf(document.activeElement);elements[(idx+move+elements.length)%elements.length]?.focus();}if(fresh(0)&&document.activeElement instanceof HTMLElement)document.activeElement.click();previousButtons=down;}else previousButtons=[];requestAnimationFrame(pollGamepad);}
+if(navigator.getGamepads)requestAnimationFrame(pollGamepad);
