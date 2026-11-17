@@ -13,6 +13,8 @@ targets:
       - ContentView.swift
       - GeneralVideoPlayerScreen.swift
       - FrameBrowserPage.swift
+      - FrameIPTVPage.swift
+      - FrameSettingsPage.swift
       - UMDVideoPlayerApp.swift
       - PSPControllerManager.swift
       - UMDVideoISOReader.swift
