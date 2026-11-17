@@ -36,6 +36,24 @@ jobs:
             -IUMDVideoCore/src/platform \
             UMDVideoPlayerBridge.c
 
+      - name: Check portable UMD playback engine C sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r file; do
+            echo "Checking $file"
+            clang -std=c11 -fsyntax-only \
+              -I UMDVideoCore/src \
+              -I UMDVideoCore/src/core \
+              -I UMDVideoCore/src/app \
+              -I UMDVideoCore/src/platform \
+              "$file"
+            count=$((count + 1))
+          done < <(find UMDVideoCore/src/core UMDVideoCore/src/app -name '*.c' -type f | sort)
+          test "$count" -gt 0
+          echo "Checked $count portable UMD C files"
+
       - name: Parse native Swift sources on Linux
         shell: bash
         run: |
