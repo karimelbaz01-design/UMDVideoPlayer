@@ -89,6 +89,7 @@ final class PSPControllerManager: ObservableObject {
 
         var buttons: UInt32 = 0
         var stickY: Int32 = 0
+        var umdButtons: UInt32 = 0
         var xAxis: Float = 0
         var yAxis: Float = 0
 
@@ -111,10 +112,13 @@ final class PSPControllerManager: ObservableObject {
             let stickYValue = pad.leftThumbstick.yAxis.value
             xAxis = abs(stickX) < 0.12 ? 0 : stickX
             yAxis = abs(stickYValue) < 0.12 ? 0 : stickYValue
-            if stickX < -0.55 { buttons |= 1 << 2 }
-            if stickX > 0.55 { buttons |= 1 << 3 }
-            if stickYValue > 0.55 { buttons |= 1 << 0 }
-            if stickYValue < -0.55 { buttons |= 1 << 1 }
+            // Preserve true analog input for PSP games. The UMD menu also accepts
+            // a digital approximation, but analog motion must not press PSP D-pad.
+            umdButtons = buttons
+            if stickX < -0.55 { umdButtons |= 1 << 2 }
+            if stickX > 0.55 { umdButtons |= 1 << 3 }
+            if stickYValue > 0.55 { umdButtons |= 1 << 0 }
+            if stickYValue < -0.55 { umdButtons |= 1 << 1 }
             stickY = Int32(max(-127, min(127, Int(-stickYValue * 127))))
         } else if let pad = controller.microGamepad {
             if pad.dpad.up.isPressed { buttons |= 1 << 0 }
@@ -126,14 +130,16 @@ final class PSPControllerManager: ObservableObject {
             if pad.buttonMenu.isPressed { buttons |= 1 << 10 }
         }
 
+        if controller.extendedGamepad == nil { umdButtons = buttons }
+
         // Future PSP game core consumes the full analog axes, not simulated D-pad presses.
         gameButtons = buttons
         analogX = xAxis
         analogY = yAxis
-        ios_umd_set_controller_input(buttons, stickY)
+        ios_umd_set_controller_input(umdButtons, stickY)
 
-        let newlyPressed = buttons & ~previousBrowserButtons
-        previousBrowserButtons = buttons
+        let newlyPressed = umdButtons & ~previousBrowserButtons
+        previousBrowserButtons = umdButtons
         if newlyPressed & (1 << 0) != 0 { postBrowserAction("up") }
         if newlyPressed & (1 << 1) != 0 { postBrowserAction("down") }
         if newlyPressed & (1 << 2) != 0 { postBrowserAction("left") }
