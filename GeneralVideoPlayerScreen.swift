@@ -8,9 +8,8 @@ struct GeneralVideoPlayerScreen: View {
     var body: some View {
         Group {
             if let player {
-                VideoPlayer(player: player)
+                FrameAVPlayerView(player: player)
                     .onAppear { player.play() }
-                    .onDisappear { player.pause() }
             } else {
                 ProgressView("Preparazione video…")
                     .tint(.white)
