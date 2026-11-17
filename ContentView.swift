@@ -8,6 +8,8 @@ private enum FrameTab: String, CaseIterable, Identifiable {
     case watch = "Watch"
     case library = "Library"
     case browser = "Web"
+    case iptv = "IPTV"
+    case settings = "Settings"
 
     var id: String { rawValue }
 
@@ -18,6 +20,8 @@ private enum FrameTab: String, CaseIterable, Identifiable {
         case .watch: return "play.rectangle.fill"
         case .library: return "square.stack.3d.up.fill"
         case .browser: return "safari.fill"
+        case .iptv: return "tv.fill"
+        case .settings: return "gearshape.fill"
         }
     }
 }
@@ -145,6 +149,8 @@ struct ContentView: View {
                         case .watch: watchPage
                         case .library: libraryPage
                         case .browser: FrameBrowserPage()
+                        case .iptv: FrameIPTVPage()
+                        case .settings: FrameSettingsPage()
                         }
                     }
                     .padding(.horizontal, 20)
