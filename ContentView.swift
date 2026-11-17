@@ -812,6 +812,26 @@ struct ContentView: View {
         }
     }
 
+    private func isSupportedPSPGameImage(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        guard ["iso", "cso"].contains(ext),
+              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        do {
+            if ext == "cso" {
+                return try handle.read(upToCount: 4) == Data([0x43, 0x49, 0x53, 0x4F])
+            }
+            // ISO9660 primary volume descriptor starts at logical sector 16.
+            try handle.seek(toOffset: 16 * 2048)
+            guard let descriptor = try handle.read(upToCount: 6),
+                  descriptor.count == 6 else { return false }
+            return descriptor[0] == 1 &&
+                descriptor.subdata(in: 1..<6) == Data("CD001".utf8)
+        } catch {
+            return false
+        }
+    }
+
     private func handleGameImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result else {
             if case .failure(let error) = result { importError = error.localizedDescription }
@@ -825,6 +845,10 @@ struct ContentView: View {
             let granted = url.startAccessingSecurityScopedResource()
             defer { if granted { url.stopAccessingSecurityScopedResource() } }
             do {
+                guard isSupportedPSPGameImage(url) else {
+                    importError = "File non valido: \\(url.lastPathComponent). Seleziona un'immagine ISO9660 o CSO riconosciuta."
+                    continue
+                }
                 var destination = folder.appendingPathComponent(url.lastPathComponent)
                 if FileManager.default.fileExists(atPath: destination.path) {
                     destination = folder.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
