@@ -1,8 +1,33 @@
 # Media Platform Architecture
 
-## Product direction
+## Product direction and identity
 
-Evolve UMD Video Player into a personal media platform for a user's own movies, TV series, and PSP UMD Video discs. The app does not host, sell, bundle, scrape, or distribute film/TV content. Users import files they are entitled to use or provide direct media URLs they are authorized to access.
+The product is a **PSP-inspired entertainment hub: play, watch, and relive**. It must be immediately clear from onboarding and the home screen that this is both:
+- A PSP gaming emulator experience for users' own game images, with controller and touch controls.
+- A personal video and TV library for movies, series, home videos, and PSP UMD Video.
+
+The design language is deliberately **retro meets contemporary**: subtle PSP-era references, tactile disc/media details, and nostalgic visual cues combined with a polished 2026 interface, fluid transitions, high-resolution artwork, modern typography, and high-definition playback. Avoid copying PPSSPP, Netflix, or another single product. Give the app its own recognizable visual identity.
+
+The home screen should make the two main activities unmistakable:
+- **PLAY** — PSP games, recently played, game library, controller status.
+- **WATCH** — Movies, TV series, home videos, UMD Video, continue watching.
+
+Do not make the app look like a video player that happens to have an emulator hidden in a menu. Gaming and video are equal first-class pillars.
+
+The app is a personal media platform for content the user owns or is authorized to access. It does not host, sell, bundle, scrape, or distribute film/TV content or game images. Users import their own files or provide authorized direct media URLs.
+
+## Gaming and emulation
+
+Keep PSP gaming as a first-class product pillar, not a future footnote. The existing UMD Video playback engine is not a PSP game emulator; these are separate technical systems.
+
+Evaluate integrating the PPSSPP emulator core as the most practical route to broad PSP game compatibility, while building our own SwiftUI front end, library, onboarding, controller settings, and user experience. Do not claim game emulation is available until the core is integrated and tested. Review GPL-2.0-or-later obligations before distribution if PPSSPP code is included.
+
+The gaming area should include:
+- User-imported PSP game images only; no bundled copyrighted games.
+- Recently played, favorites, game details, and per-game settings.
+- Bluetooth controller support and configurable controls.
+- Touch controls for supported games.
+- Save-state and performance features only when actually supported by the integrated core and tested on device.
 
 ## Separate playback engines
 
@@ -15,7 +40,7 @@ Use as the default engine for:
 - HTTP Live Streaming (HLS) manifests (.m3u8).
 - Direct HTTP(S) media URLs supported by AVPlayer.
 
-Advantages: native iOS integration, hardware decoding where available, system playback controls, AirPlay, and efficient HLS adaptation.
+Advantages: native iOS integration, hardware decoding where available, system playback controls, AirPlay output, and efficient HLS adaptation.
 
 ### Engine B — MobileVLCKit / libVLC (evaluate before adoption)
 
@@ -60,12 +85,23 @@ Suggested metadata fields:
 
 Metadata enrichment should be opt-in and use a documented metadata provider/API with attribution and terms compliance. The app must still work offline with filenames and manually entered details.
 
+## AirPlay and external display
+
+AirPlay must be part of the video experience, not merely a marketing bullet:
+- Use AVPlayer's native AirPlay route selection for compatible local and remote video.
+- Preserve playback position and selected audio/subtitle tracks when the output route changes where the framework permits.
+- Test UMD Video's custom rendering/audio path separately; native AVPlayer AirPlay support does not automatically make the custom UMD engine AirPlay-compatible.
+- For general screen mirroring, explain that users can start iPhone screen mirroring from Control Center. Do not imply the app can silently force system-wide screen mirroring.
+- Validate audio/video sync, orientation, resolution, and interruption recovery on a real AirPlay receiver.
+
 ## Interface direction
 
-Avoid copying Netflix or PPSSPP. Use a distinct editorial/cinematic identity:
+Avoid copying Netflix or PPSSPP. Use a distinct retro-contemporary identity:
 - A compact "Continue" rail with progress.
 - A featured title area with backdrop and restrained typography.
-- Separate Movies, Series, UMD Video, and Collections sections.
+- A prominent PLAY / WATCH home choice, with equal visual weight.
+- PLAY: PSP games, recently played, game library, controller status.
+- WATCH: Movies, Series, Home Videos, UMD Video, and Collections.
 - Movie cards with poster, title, year, and runtime.
 - Series pages with seasons and episode rows, thumbnails, synopsis, and progress.
 - A clean import flow: Files, Direct Link, Playlist.
@@ -82,7 +118,8 @@ Avoid copying Netflix or PPSSPP. Use a distinct editorial/cinematic identity:
 6. Evaluate MobileVLCKit as a compatibility fallback, only after license and build validation.
 7. Add film/series metadata and artwork enrichment.
 8. Refine the new library and player design.
-9. Test on a physical iPhone for real playback, performance, audio, subtitles, AirPlay, and background/lock-screen behavior.
+9. Integrate and validate the PSP game core separately from UMD Video playback.
+10. Test on a physical iPhone for real game compatibility, controller input, video playback, performance, audio, subtitles, AirPlay, and background/lock-screen behavior.
 
 ## Current verified baseline
 
