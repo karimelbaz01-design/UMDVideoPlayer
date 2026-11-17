@@ -20,6 +20,38 @@ $('openSite').onclick=()=>{try{const u=new URL($('address').value);if(!['https:'
 function pollGamepad(){const pads=navigator.getGamepads?.()||[];const pad=Array.from(pads).find(Boolean);$('padStatus').textContent=pad?'Controller: '+pad.id:'Controller non rilevato';if(pad){const down=pad.buttons.map(b=>b.pressed);const fresh=i=>down[i]&&!previousButtons[i];if(fresh(4))go(tabs[(tabs.indexOf(active)+tabs.length-1)%tabs.length]);if(fresh(5))go(tabs[(tabs.indexOf(active)+1)%tabs.length]);const move=fresh(12)?-1:fresh(13)?1:0;if(move){const elements=[...document.querySelectorAll('nav button,section:not([hidden]) button,section:not([hidden]) input')].filter(el=>el.offsetParent!==null);const idx=elements.indexOf(document.activeElement);elements[(idx+move+elements.length)%elements.length]?.focus();}if(fresh(0)&&document.activeElement instanceof HTMLElement)document.activeElement.click();previousButtons=down;}else previousButtons=[];requestAnimationFrame(pollGamepad);}
 if(navigator.getGamepads)requestAnimationFrame(pollGamepad);
 
+
+async function inspectIsoDirectory(file,extent,length){
+  const block=2048;
+  if(!Number.isSafeInteger(extent)||!Number.isSafeInteger(length)||length<0||length>8388608||extent*block+length>file.size)throw Error('Directory ISO non valida.');
+  const b=new Uint8Array(await file.slice(extent*block,extent*block+length).arrayBuffer()),records=[];
+  for(let p=0;p<b.length;){
+    const len=b[p];if(!len){p=(Math.floor(p/block)+1)*block;continue;}
+    if(len<34||p+len>b.length)break;
+    const n=b[p+32];if(n>1&&p+33+n<=p+len){
+      const name=new TextDecoder('ascii').decode(b.slice(p+33,p+33+n)).replace(/;\d+$/,'');
+      const v=new DataView(b.buffer,b.byteOffset+p,len);
+      records.push({name,extent:v.getUint32(2,true),size:v.getUint32(10,true),directory:!!(b[p+25]&2)});
+    }p+=len;
+  }return records;
+}
+async function inspectSfo(file,record){
+  if(!record||record.directory||record.size>262144||record.extent*2048+record.size>file.size)return {};
+  const b=new Uint8Array(await file.slice(record.extent*2048,record.extent*2048+record.size).arrayBuffer());
+  if(b.length<20)return {};
+  const v=new DataView(b.buffer,b.byteOffset,b.byteLength);if(v.getUint32(0,true)!==0x46535000)return {};
+  const keys=v.getUint32(8,true),data=v.getUint32(12,true),count=Math.min(v.getUint32(16,true),128),result={};
+  for(let i=0;i<count;i++){
+    const p=20+i*16;if(p+16>b.length)break;
+    const k=keys+v.getUint16(p,true),size=v.getUint32(p+4,true),value=data+v.getUint32(p+12,true);
+    if(k>=b.length||size>4096||value+size>b.length)continue;
+    const end=b.indexOf(0,k);if(end<0)continue;
+    const key=new TextDecoder().decode(b.slice(k,end));
+    if(!['TITLE','DISC_ID','CATEGORY','DISC_VERSION','PSP_SYSTEM_VER'].includes(key))continue;
+    result[key]=new TextDecoder().decode(b.slice(value,value+size)).replace(/\0+$/,'');
+  }return result;
+}
+
 $('inspectImage').onclick=()=>$('inspectFile').click();
 $('inspectFile').onchange=async e=>{
   const file=e.target.files[0];if(!file)return;
@@ -46,7 +78,15 @@ $('inspectFile').onchange=async e=>{
     while(offset<dir.length){const len=dir[offset];if(len===0){offset=(Math.floor(offset/sector)+1)*sector;continue;}if(len<34||offset+len>dir.length)break;const n=dir[offset+32];if(n>1&&offset+33+n<=dir.length){names.push(new TextDecoder('ascii').decode(dir.slice(offset+33,offset+33+n)).replace(/;\d+$/,''));}offset+=len;}
     const game=names.some(n=>n.toUpperCase()==='PSP_GAME');
     const umd=names.some(n=>n.toUpperCase()==='UMD_VIDEO');
-    out.textContent=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'].join('\n');
+    let metadata={},detail='';
+    const selected=(await inspectIsoDirectory(file,rootExtent,rootLength)).find(r=>r.directory&&r.name.toUpperCase()===(umd?'UMD_VIDEO':'PSP_GAME'));
+    if(selected){
+      const contents=await inspectIsoDirectory(file,selected.extent,selected.size);
+      const sfo=contents.find(r=>r.name.toUpperCase()==='PARAM.SFO');
+      if(sfo)metadata=await inspectSfo(file,sfo);
+      detail='Elementi nella cartella '+selected.name+': '+contents.slice(0,24).map(r=>r.name).join(', ');
+    }
+    out.textContent=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),...Object.entries(metadata).map(([key,value])=>key+': '+value),detail,'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'].filter(Boolean).join('\\n'); contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'].join('\n');
   }catch(err){out.textContent='Analisi non riuscita: '+err.message;}
   finally{e.target.value='';}
 };
