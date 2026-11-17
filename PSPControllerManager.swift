@@ -16,6 +16,16 @@ final class PSPControllerManager: ObservableObject {
 
     private var controller: GCController?
     private var previousBrowserButtons: UInt32 = 0
+    private var gameInputEnabled = false
+
+    /// Activate when the PSP gameplay screen is actually running.
+    /// Prevents gamepad presses from also controlling the browser or UMD menus.
+    func setGameInputEnabled(_ enabled: Bool) {
+        gameInputEnabled = enabled
+        previousBrowserButtons = 0
+        if enabled { ios_umd_set_controller_input(0, 0) }
+        publishInput()
+    }
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -136,6 +146,11 @@ final class PSPControllerManager: ObservableObject {
         gameButtons = buttons
         analogX = xAxis
         analogY = yAxis
+        if gameInputEnabled {
+            ios_umd_set_controller_input(0, 0)
+            previousBrowserButtons = 0
+            return
+        }
         ios_umd_set_controller_input(umdButtons, stickY)
 
         let newlyPressed = umdButtons & ~previousBrowserButtons
