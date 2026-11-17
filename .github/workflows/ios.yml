@@ -50,10 +50,15 @@ jobs:
           swift --version
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then brew install xcodegen; fi
 
       - name: Generate Xcode project
         run: xcodegen generate
+
+      - name: Validate generated Xcode project
+        run: |
+          xcodebuild -list -project UMDVideoPlayer.xcodeproj
 
       - name: Build iOS Simulator app
         shell: bash
