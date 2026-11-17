@@ -7,6 +7,7 @@ private enum FrameTab: String, CaseIterable, Identifiable {
     case play = "Play"
     case watch = "Watch"
     case library = "Library"
+    case browser = "Web"
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ private enum FrameTab: String, CaseIterable, Identifiable {
         case .play: return "gamecontroller.fill"
         case .watch: return "play.rectangle.fill"
         case .library: return "square.stack.3d.up.fill"
+        case .browser: return "safari.fill"
         }
     }
 }
@@ -142,6 +144,7 @@ struct ContentView: View {
                         case .play: playPage
                         case .watch: watchPage
                         case .library: libraryPage
+                        case .browser: FrameBrowserPage()
                         }
                     }
                     .padding(.horizontal, 20)
@@ -284,6 +287,10 @@ struct ContentView: View {
             if !videos.isEmpty || !discs.isEmpty {
                 sectionHeading("AGGIUNTI DI RECENTE", subtitle: "Riprendi dalla tua raccolta")
                 recentContent
+            }
+
+            actionTile("Apri il browser", symbol: "safari.fill", tint: lavender) {
+                selectedTab = .browser
             }
 
             HStack(spacing: 12) {
