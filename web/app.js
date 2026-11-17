@@ -122,3 +122,12 @@ $('inspectFile').onchange=async e=>{
 
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 $('player').addEventListener('error',()=>{const err=$('player').error;notice('Il video non è riproducibile in questo browser'+(err?' (errore '+err.code+')':'')+'. Prova un formato H.264/AAC compatibile.');});
+
+// Android native UMD reader: browser preview continues to use the JavaScript inspector.
+if (window.FrameNative && document.getElementById('inspectImage')) {
+  const nativeButton = document.createElement('button');
+  nativeButton.textContent = 'Analizza disco con motore Android';
+  nativeButton.type = 'button';
+  nativeButton.onclick = () => window.FrameNative.pickDisc();
+  document.getElementById('inspectImage').insertAdjacentElement('afterend', nativeButton);
+}
