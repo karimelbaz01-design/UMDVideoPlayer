@@ -241,7 +241,7 @@ private struct IPTVPlayerView: View {
                 Text(channel.name).font(.system(size: 13, weight: .bold)).lineLimit(1)
             }
             if let player {
-                VideoPlayer(player: player).onAppear { player.play() }.onDisappear { player.pause() }
+                FrameAVPlayerView(player: player).onAppear { player.play() }
             } else {
                 ProgressView("Connessione al canale…").tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
