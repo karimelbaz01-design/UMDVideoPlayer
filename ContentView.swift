@@ -683,6 +683,11 @@ struct ContentView: View {
             .background(panel, in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive) { removeVideo(item) } label: {
+                Label("Rimuovi dalla libreria", systemImage: "trash")
+            }
+        }
     }
 
     private func discRow(_ disc: ImportedDisc) -> some View {
@@ -844,6 +849,23 @@ struct ContentView: View {
         linkText = ""
         linkTitle = ""
         showingLinkSheet = false
+    }
+
+    private func removeVideo(_ item: LibraryVideo) {
+        // Only remove imported copies inside the app's Documents directory.
+        if !item.isRemote, let url = item.url {
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            if url.deletingLastPathComponent().standardizedFileURL == documents.standardizedFileURL {
+                do {
+                    try FileManager.default.removeItem(at: url)
+                } catch {
+                    importError = "Impossibile eliminare il file locale: \(error.localizedDescription)"
+                    return
+                }
+            }
+        }
+        videos.removeAll { $0.id == item.id }
+        saveVideoLibrary()
     }
 
     private func saveVideoLibrary() {
