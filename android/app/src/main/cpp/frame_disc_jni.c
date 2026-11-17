@@ -8,6 +8,7 @@
 #include "disc_image.h"
 #include "iso9660.h"
 #include "sfo.h"
+#include "umdv.h"
 
 typedef struct { int fd; } frame_file;
 
@@ -58,11 +59,35 @@ Java_com_karim_frame_DiscEngine_inspect(JNIEnv *env, jclass cls, jint fd, jlong 
                     free(bytes);
                 }
             }
+            unsigned int movie_titles = 0;
+            unsigned int movie_items = 0;
+            unsigned int movie_chapters = 0;
+            if (has_video) {
+                iso_entry playlist_entry;
+                if (iso_find(&volume, "UMD_VIDEO/PLAYLIST.UMD", &playlist_entry) == 0
+                    && !playlist_entry.is_dir && playlist_entry.size >= 16
+                    && playlist_entry.size <= 4 * 1024 * 1024) {
+                    uint8_t *playlist_bytes = (uint8_t *)malloc(playlist_entry.size);
+                    umdv_playlist *playlist = (umdv_playlist *)malloc(sizeof(umdv_playlist));
+                    if (playlist_bytes && playlist
+                        && iso_read(&volume, &playlist_entry, 0, playlist_bytes,
+                                    playlist_entry.size) == (int64_t)playlist_entry.size
+                        && umdv_playlist_parse(playlist_bytes, playlist_entry.size, playlist) == 0) {
+                        movie_titles = playlist->title_count;
+                        movie_items = playlist->item_count;
+                        movie_chapters = playlist->chapter_count;
+                    }
+                    free(playlist);
+                    free(playlist_bytes);
+                }
+            }
             snprintf(result, sizeof(result),
                      "Type: %s\\nVolume: %.32s\\nTitle: %.120s\\nDisc ID: %.56s\\n"
+                     "UMD titles: %u | Clips: %u | Chapters: %u\\n"
                      "Native ISO/CSO/ZSO reader: OK\\nPlayback: not yet connected",
                      kind, volume.volume_id, title[0] ? title : "Unknown",
-                     disc_id[0] ? disc_id : "Not provided");
+                     disc_id[0] ? disc_id : "Not provided",
+                     movie_titles, movie_items, movie_chapters);
         } else {
             snprintf(result, sizeof(result), "Disc image recognized, but ISO9660 volume could not be opened.");
         }
