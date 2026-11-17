@@ -43,7 +43,7 @@ jobs:
           count=0
           while IFS= read -r file; do
             echo "Checking $file"
-            clang -std=c11 -fsyntax-only \
+            clang -std=c11 -D_POSIX_C_SOURCE=200809L -fsyntax-only \
               -I UMDVideoCore/src \
               -I UMDVideoCore/src/core \
               -I UMDVideoCore/src/app \
