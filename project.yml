@@ -12,6 +12,7 @@ targets:
     sources:
       - ContentView.swift
       - GeneralVideoPlayerScreen.swift
+      - FrameBrowserPage.swift
       - UMDVideoPlayerApp.swift
       - PSPControllerManager.swift
       - UMDVideoISOReader.swift
