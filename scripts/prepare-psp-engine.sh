@@ -14,14 +14,14 @@ if [ -e "$ENGINE_DIR" ] && [ ! -d "$ENGINE_DIR/.git" ]; then
 fi
 if [ ! -d "$ENGINE_DIR/.git" ]; then
   mkdir -p "$(dirname "$ENGINE_DIR")"
-  git clone "$PPSSPP_REPO" "$ENGINE_DIR"
+  git clone --filter=blob:none "$PPSSPP_REPO" "$ENGINE_DIR"
 fi
 # Refuse to reuse a checkout that points at a different upstream.
 REMOTE="$(git -C "$ENGINE_DIR" remote get-url origin)"
 if [ "$REMOTE" != "$PPSSPP_REPO" ]; then
   echo "Unexpected PPSSPP origin: $REMOTE" >&2; exit 1
 fi
-git -C "$ENGINE_DIR" fetch origin "$PPSSPP_REVISION"
+git -C "$ENGINE_DIR" fetch --filter=blob:none origin "$PPSSPP_REVISION"
 git -C "$ENGINE_DIR" checkout --detach "$PPSSPP_REVISION"
 git -C "$ENGINE_DIR" submodule sync --recursive
 git -C "$ENGINE_DIR" submodule update --init --recursive
