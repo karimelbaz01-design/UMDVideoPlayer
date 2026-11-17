@@ -5,6 +5,16 @@ on:
   push:
     branches:
       - main
+    paths:
+      - '**/*.swift'
+      - '**/*.m'
+      - '**/*.c'
+      - '**/*.h'
+      - 'project.yml'
+      - 'Info.plist'
+      - '.gitmodules'
+      - 'UMDVideoCore'
+      - '.github/workflows/ios.yml'
 
 # Only the newest commit needs a simulator build; cancel stale queued or running validations.
 concurrency:
