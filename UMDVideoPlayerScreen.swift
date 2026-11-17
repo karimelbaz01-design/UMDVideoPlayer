@@ -37,6 +37,8 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
         }
 
         func start(path: String, surface: UMDVideoSurface) {
+            // Clear stale input before starting a new UMD playback session.
+            ios_umd_set_controller_input(0, 0)
             ios_umd_set_surface(Unmanaged.passUnretained(surface).toOpaque())
             UIApplication.shared.isIdleTimerDisabled = true
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [])
@@ -75,6 +77,7 @@ struct UMDVideoPlayerScreen: UIViewRepresentable {
                 ios_umd_stop()
                 isRunning = false
             }
+            ios_umd_set_controller_input(0, 0)
             ios_umd_clear_surface()
             UIApplication.shared.isIdleTimerDisabled = false
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
