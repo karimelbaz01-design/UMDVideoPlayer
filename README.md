@@ -1,32 +1,45 @@
-# UMD Video Player
+# FRAME — PSP gaming and personal media hub
 
-An iOS app for organizing and playing PSP UMD Video disc images, with a modern library and a PSP-inspired interface.
+FRAME is an iOS project with an original, contemporary interface inspired by the feeling of handheld entertainment devices. It is designed around PLAY and WATCH, with IPTV, a built-in web browser, and a unified library.
 
-## Current implementation
+## Product pillars
 
-- SwiftUI library with Modern and PSP-style layouts.
-- Imports ISO files from the iOS Files picker and copies them into the app's Documents folder.
-- Rebuilds the ISO library from Documents at launch, so imported discs remain listed after closing the app.
-- Identifies the ISO-9660 UMD_VIDEO folder, PLAYLIST.UMD, and MPS streams when the initial inspection succeeds.
-- Allows an ISO image that the preliminary scanner does not recognize to be passed to the playback engine for its own validation.
-- Includes the open-source [UMD Player engine](https://github.com/xesf/umd-player) as a pinned Git submodule in `UMDVideoCore`.
-- Adds an initial iOS adapter for the upstream C playback core: ISO file access, H.264 software decoding, ATRAC3plus audio output, touch input, and video/subtitle/UI layer presentation.
-- GitHub Actions builds the iOS Simulator app without code signing and compiles the upstream macOS reference player.
+- **PLAY:** PSP game library and controller-ready experience. A real PSP game emulator core is not integrated yet; the existing UMD Video engine does not emulate PSP games.
+- **WATCH:** local movies, series episodes, personal videos, direct compatible media links, and PSP UMD Video images.
+- **IPTV:** import local M3U playlists or load an authorized HTTP(S) playlist URL, parse channel names/groups, mark favorites, and play compatible streams through AVPlayer.
+- **FRAME Browser:** embedded WKWebView browser with search/address navigation, back/forward/reload, and controller focus navigation for many standard page controls.
+- **Library and settings:** imported content, controller status, playback preferences UI, and a proposed FRAME Premium plan.
+- **AirPlay:** AVPlayer can expose native external playback for compatible media. UMD Video output needs separate implementation and physical-device verification.
 
-## Playback verification
+## Current code in this repository
 
-The iOS playback bridge and platform adapter are in place, but **real movie playback on an iPhone is not yet verified**. The first successful iOS build and testing with known-good UMD Video images are still required. A successful macOS reference build is not proof that the iOS port works.
+- SwiftUI FRAME navigation and original dark/coral/lavender visual system.
+- Import and persistence of local video files.
+- Direct HTTP(S) media URL entries for AVPlayer-compatible files/streams.
+- UMD Video ISO import and ISO inspection through the pinned open-source UMD Player engine.
+- Initial iOS adapter for the upstream C playback core.
+- IPTV M3U playlist parsing, channel groups, favorites, remote playlist loading, and AVPlayer stream playback for compatible entries.
+- WKWebView browser with basic controller-driven focus movement.
+- Bluetooth controller discovery and initial input bridge.
 
-See [iOS port status](docs/IOS_PORT_STATUS.md) for the engineering checklist and current limitations.
+## Important limitations
 
-## Licensing
+A UI screen does not mean its complete engine is production-ready. PSP game emulation is not yet integrated. Not every webpage or IPTV stream can be played: provider restrictions, DRM, login, codecs, network conditions, and iOS WebKit/AVPlayer support matter. No DRM, paywall, authentication, or access-control bypass is implemented.
 
-The engine is MIT-licensed, with its ATRAC3plus decoder under LGPL-2.1-or-later. Its license and notice files are included in the app resources. Keep these notices and the source available with any redistributed build. This project is not affiliated with Sony.
+The Premium panel is a product concept only. There is no live advertising SDK, StoreKit purchase flow, entitlement validation, or paid feature gating. Free users should retain good playback quality; Premium may remove ads and add optional convenience and quality controls only where the source/device support them.
 
-## Sony firmware
+AirPlay via AVPlayer is intended for compatible normal media and IPTV streams. UMD Video uses a custom playback engine and needs a separate AirPlay path and testing.
 
-This implementation uses the standalone UMD Player engine, not PPSSPP's PSP firmware/XMB route. It is therefore not designed to require a PSP firmware download from Sony.
+## Build and validation
 
-## Testing on iPhone
+GitHub Actions builds the iOS Simulator target without code signing. A successful simulator build proves compilation only; it does not prove real UMD playback, PSP game emulation, controller mapping, AirPlay, IPTV provider compatibility, or installation on a physical iPhone.
 
-A simulator `.app` artifact is not directly installable on a physical iPhone. A separate iPhone installation/signing route is still required. GitHub Actions can compile the project remotely; a Mac is not needed for every code change, but access to a Mac or another supported signing workflow will be needed for the initial on-device installation and real-device debugging.
+See:
+- [Media platform architecture](docs/MEDIA_PLATFORM_ARCHITECTURE.md)
+- [iOS port status](docs/IOS_PORT_STATUS.md)
+
+## Licensing and content
+
+Users provide their own media, playlists, and game images and must have the rights or authorization to use them. FRAME does not bundle copyrighted games or films. Review each upstream engine's license and notices before distributing builds. The current UMD Video engine is MIT-licensed with an ATRAC3plus component under LGPL-2.1-or-later; preserve required notices and source availability.
+
+FRAME is an independent project and is not affiliated with Sony.
