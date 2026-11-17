@@ -80,6 +80,7 @@ struct ContentView: View {
     @State private var selectedTab: FrameTab = .home
     @State private var showingGameImporter = false
     @State private var games: [PSPGame] = []
+    @State private var favoriteGamePaths: Set<String> = []
     @State private var showingISOImporter = false
     @State private var showingVideoImporter = false
     @State private var showingLinkSheet = false
@@ -364,11 +365,19 @@ struct ContentView: View {
             if games.isEmpty {
                 emptyMessage("Nessun gioco importato", detail: "Seleziona un file ISO o CSO dalla tua app File.")
             } else {
-                ForEach(games) { game in
+                ForEach(games.sorted { favoriteGamePaths.contains($0.url.path) && !favoriteGamePaths.contains($1.url.path) }) { game in
                     HStack {
                         Image(systemName: "gamecontroller.fill").foregroundStyle(lavender)
                         Text(game.title).font(.system(size: 13, weight: .semibold))
                         Spacer()
+                        Button {
+                            toggleGameFavorite(game)
+                        } label: {
+                            Image(systemName: favoriteGamePaths.contains(game.url.path) ? "star.fill" : "star")
+                                .foregroundStyle(lavender)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(favoriteGamePaths.contains(game.url.path) ? "Rimuovi dai preferiti" : "Aggiungi ai preferiti")
                         Text("IN ATTESA DEL CORE").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
                     .padding(12).background(panel, in: RoundedRectangle(cornerRadius: 12))
@@ -772,6 +781,15 @@ struct ContentView: View {
         .background(panel.opacity(0.7), in: RoundedRectangle(cornerRadius: 16))
     }
 
+    private func toggleGameFavorite(_ game: PSPGame) {
+        if favoriteGamePaths.contains(game.url.path) {
+            favoriteGamePaths.remove(game.url.path)
+        } else {
+            favoriteGamePaths.insert(game.url.path)
+        }
+        UserDefaults.standard.set(Array(favoriteGamePaths), forKey: "frame.play.favorites.v1")
+    }
+
     private func removeGame(_ game: PSPGame) {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let folder = documents.appendingPathComponent("PSPGames", isDirectory: true)
@@ -782,6 +800,8 @@ struct ContentView: View {
         do {
             try FileManager.default.removeItem(at: game.url)
             games.removeAll { $0.id == game.id }
+            favoriteGamePaths.remove(game.url.path)
+            UserDefaults.standard.set(Array(favoriteGamePaths), forKey: "frame.play.favorites.v1")
         } catch {
             importError = "Impossibile rimuovere il gioco: \(error.localizedDescription)"
         }
@@ -812,6 +832,7 @@ struct ContentView: View {
 
     private func loadLibrary() {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        favoriteGamePaths = Set(UserDefaults.standard.stringArray(forKey: "frame.play.favorites.v1") ?? [])
         let gameFolder = documents.appendingPathComponent("PSPGames", isDirectory: true)
         if let gameFiles = try? FileManager.default.contentsOfDirectory(at: gameFolder, includingPropertiesForKeys: nil) {
             games = gameFiles.filter { ["iso", "cso"].contains($0.pathExtension.lowercased()) }
