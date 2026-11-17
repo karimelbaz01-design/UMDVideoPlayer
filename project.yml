@@ -84,7 +84,7 @@ targets:
           - "$(SRCROOT)/UMDVideoCore/src/platform"
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: "UMD Video"
+        INFOPLIST_KEY_CFBundleDisplayName: "FRAME"
 
     info:
       path: Info.plist
