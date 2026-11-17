@@ -151,7 +151,10 @@ struct FrameBrowserPage: View {
             .padding(.top, 8)
             .padding(.bottom, 10)
 
+            // The page is hosted inside the app's outer ScrollView; give WKWebView
+            // a real viewport so it does not collapse to an ambiguous height.
             BrowserWebView(model: model)
+                .frame(height: 470)
                 .background(.white)
 
             HStack(spacing: 0) {
