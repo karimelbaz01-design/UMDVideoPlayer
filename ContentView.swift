@@ -19,6 +19,7 @@ struct ImportedDisc: Identifiable {
 }
 
 struct ContentView: View {
+    @StateObject private var controllerManager = PSPControllerManager.shared
     @State private var style: PlayerStyle = .modern
     @State private var showingImporter = false
     @State private var discs: [ImportedDisc] = []
@@ -118,6 +119,19 @@ struct ContentView: View {
                     .font(.system(size: 28, weight: .bold, design: .rounded))
             }
             Spacer()
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(controllerManager.isConnected ? Color.green : Color.gray)
+                    .frame(width: 7, height: 7)
+                Text(controllerManager.isConnected ? "PAD" : "TOUCH")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(1)
+                    .foregroundStyle(controllerManager.isConnected ? .green : .secondary)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(.white.opacity(0.08), in: Capsule())
+            .accessibilityLabel(controllerManager.isConnected ? "Controller collegato: \\(controllerManager.connectedControllerName ?? \"Controller\")" : "Usa i controlli touch")
             Button {
                 showingImporter = true
             } label: {
