@@ -11,6 +11,7 @@ targets:
     platform: iOS
     sources:
       - ContentView.swift
+      - GeneralVideoPlayerScreen.swift
       - UMDVideoPlayerApp.swift
       - PSPControllerManager.swift
       - UMDVideoISOReader.swift
