@@ -146,7 +146,7 @@ static CGRect screen_rect(plat_rect r)
         return CGRectZero;
     CGRect b = ios_content_rect(active_surface);
     return CGRectMake(b.origin.x + r.x * b.size.width,
-                      b.origin.y + (1.0 - r.y - r.h) * b.size.height,
+                      b.origin.y + r.y * b.size.height,
                       r.w * b.size.width,
                       r.h * b.size.height);
 }
