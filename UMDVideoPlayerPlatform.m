@@ -3,6 +3,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <CoreVideo/CoreVideo.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <stdint.h>
 
 #include "UMDVideoCore/src/platform/platform.h"
 #include "UMDVideoCore/src/platform/macos/mac_frame.h"
@@ -11,6 +12,14 @@
 static int ios_touch_down;
 static int ios_touch_x;
 static int ios_touch_y;
+static volatile uint32_t ios_controller_buttons;
+static volatile int ios_controller_stick_y;
+
+void ios_umd_set_controller_input(uint32_t buttons, int32_t stick_y)
+{
+    ios_controller_buttons = buttons;
+    ios_controller_stick_y = (int)MAX(-127, MIN(127, stick_y));
+}
 
 static CGRect ios_content_rect(UIView *view)
 {
@@ -261,8 +270,8 @@ int plat_glyph(uint32_t cp, int px, uint8_t *alpha)
 }
 
 int plat_keyboard_ui(void) { return 0; }
-uint32_t plat_buttons(void) { return 0; }
-int plat_stick_y(void) { return 0; }
+uint32_t plat_buttons(void) { return ios_controller_buttons; }
+int plat_stick_y(void) { return ios_controller_stick_y; }
 int plat_scroll(void) { return 0; }
 
 int plat_touch(int *x, int *y)
