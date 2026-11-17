@@ -172,3 +172,10 @@ A visible UI section is not proof that its underlying engine is complete. Track 
 - Distribution-ready
 
 Do not describe PSP game emulation, UMD AirPlay, universal web playback, paid entitlements, or ad delivery as operational until each has passed its relevant integration and device tests.
+
+
+## Picture in Picture and background playback
+
+Compatible local/direct media and IPTV streams use a shared AVPlayerViewController wrapper with native iOS Picture in Picture enabled, including automatic PiP when the app moves to the background where iOS permits it. The app declares the audio background mode so AVPlayer playback can continue outside the foreground. Actual behavior must be tested on a physical iPhone and depends on the media source and iOS settings.
+
+The custom UMD Video playback engine renders through its own surface rather than AVPlayerViewController. PiP for UMD Video is a separate engineering task and is not claimed as implemented.
