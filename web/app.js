@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v60 · MP4 composition timestamps and error feedback';
+const FRAME_INSPECTOR_VERSION='UMD v61 · MP4 faststart and export';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -529,6 +529,19 @@ isoPicker.onchange=async e=>{
             nativeVideo.controls=true;nativeVideo.playsInline=true;
             nativeVideo.style.cssText='display:none;width:100%;max-width:520px;margin-top:10px;background:black';
             let nativeUrl=null;
+            const mp4Export=document.createElement('button');
+            mp4Export.type='button';
+            mp4Export.textContent='ESPORTA MP4 GENERATO (per analisi)';
+            mp4Export.style.cssText='display:none;margin-top:8px;padding:10px;border:1px solid #8d79aa;border-radius:9px;background:transparent;color:#eee';
+            mp4Export.onclick=()=>{
+              if(!frameCandidate)return;
+              try{
+                const url=URL.createObjectURL(frameNativeMp4(frameCandidate));
+                const a=document.createElement('a');a.href=url;a.download='FRAME_native_test_v61.mp4';
+                document.body.appendChild(a);a.click();a.remove();
+                setTimeout(()=>URL.revokeObjectURL(url),60000);
+              }catch(e){frameReport.textContent='Esportazione MP4 fallita: '+e.message;}
+            };
             nativeButton.onclick=()=>{
               if(!frameCandidate)return;
               try{
@@ -570,7 +583,7 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
               try{
                 const sections=16,windowBytes=2097152;
@@ -722,14 +735,14 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='block';nativeButton.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
+                  frameButton.style.display='block';nativeButton.style.display='block';mp4Export.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
@@ -1054,7 +1067,13 @@ function frameNativeMp4(data){
   const mdia=box('mdia',mdhd,hdlr,minf);
   const trak=box('trak',tkhd,mdia);
   const moov=box('moov',mvhd,trak);
-  return new Blob([ftyp,mdat,moov],{type:'video/mp4'});
+  // Place metadata before the media and point stco to the actual mdat payload.
+  // v60 placed moov at the end; exporting this result permits ffprobe validation.
+  const chunkOffset=ftyp.length+moov.length+8;
+  const stcoFinal=full('stco',0,0,u32(1),u32(chunkOffset));
+  const stblFinal=box('stbl',stsd,stts,ctts,stsc,stsz,stcoFinal,stss);
+  const moovFinal=box('moov',mvhd,box('trak',tkhd,box('mdia',mdhd,hdlr,box('minf',vmhd,dinf,stblFinal))));
+  return new Blob([ftyp,moovFinal,mdat],{type:'video/mp4'});
 }
 async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original'){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
