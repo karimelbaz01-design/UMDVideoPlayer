@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v20 · cover diagnostics';
+const FRAME_INSPECTOR_VERSION='UMD v21 · PMF inspection';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -161,6 +161,27 @@ isoPicker.onchange=async e=>{
       if(!images.length)status.textContent='Nessuna immagine ICON0.PNG / PIC1.PNG trovata.';
       else status.textContent='Immagini trovate: '+images.length+'. Intestazioni PNG valide: '+success+'. Non valide: '+failed+'. Se resta vuoto, usa Salva per verificare il file originale.';
       umdDetails.push('Anteprima UMD: '+images.length+' immagini trovate, '+success+' PNG con intestazione valida, '+failed+' non valide; verifica rendering in Safari sopra il rapporto.');
+      const pmf=contents.find(r=>!r.directory&&r.name.toUpperCase()==='ICON1.PMF');
+      if(pmf){
+        const line=document.createElement('p');line.style.cssText='font-size:13px;margin:14px 0 6px';panel.appendChild(line);
+        const offset=pmf.extent*2048;
+        if(pmf.size>0&&pmf.size<=32*1024*1024&&offset+pmf.size<=file.size){
+          const header=new Uint8Array(await file.slice(offset,offset+Math.min(64,pmf.size)).arrayBuffer());
+          const signature=String.fromCharCode(...header.slice(0,4));
+          const hex=Array.from(header.slice(0,24),b=>b.toString(16).padStart(2,'0')).join(' ');
+          line.textContent='ICON1.PMF — '+pmf.size+' byte — firma: '+JSON.stringify(signature)+'; primi byte: '+hex;
+          const raw=file.slice(offset,offset+pmf.size,'application/octet-stream');
+          const url=URL.createObjectURL(raw);
+          const link=document.createElement('a');link.href=url;link.download='ICON1.PMF';
+          link.textContent='Esporta ICON1.PMF per verifica';link.style.cssText='display:block;color:#c5a5ff;text-decoration:underline;margin:8px 0';
+          panel.appendChild(link);
+          const note=document.createElement('p');note.textContent=signature==='PSMF'
+            ? 'Contenitore PSMF riconosciuto. Animazione non ancora decodificata: Safari non riproduce direttamente PMF.'
+            : 'Firma PSMF non rilevata. Non è ancora possibile stabilire se questo file contenga una vera animazione.';
+          note.style.cssText='font-size:12px;color:#c6bccc';panel.appendChild(note);
+          umdDetails.push('ICON1.PMF: '+pmf.size+' byte; firma '+JSON.stringify(signature)+'; '+(signature==='PSMF'?'header PSMF rilevato':'header PSMF non rilevato')+'; nessun frame decodificato.');
+        }else{line.textContent='ICON1.PMF: intervallo non valido o file troppo grande per la diagnostica.';}
+      }else umdDetails.push('ICON1.PMF: assente.');
       umdDetails.push('Menu, film principale ed extra: NON classificati; richiedono interpretazione di PLAYLIST.UMD, CLIPINF e collegamenti tra stream.');
       const resources=contents.find(r=>r.directory&&r.name.toUpperCase()==='RESOURCE');
       if(resources){
