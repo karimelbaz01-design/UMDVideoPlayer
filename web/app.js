@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v64 · no fabricated composition offsets';
+const FRAME_INSPECTOR_VERSION='UMD v65 · progressive MP4 local playback';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -529,6 +529,36 @@ isoPicker.onchange=async e=>{
             nativeVideo.controls=true;nativeVideo.playsInline=true;
             nativeVideo.style.cssText='display:none;width:100%;max-width:520px;margin-top:10px;background:black';
             let nativeUrl=null;
+            // Verified playback route: user-supplied progressive MP4 plays through
+            // Safari's native media pipeline. This does NOT claim to transcode ISO.
+            const verifiedLabel=document.createElement('label');
+            verifiedLabel.textContent='RIPRODUCI MP4 PROGRESSIVO (file locale già convertito)';
+            verifiedLabel.style.cssText='display:block;margin-top:12px;font-size:13px;color:#d7c8e8';
+            const verifiedPicker=document.createElement('input');
+            verifiedPicker.type='file';verifiedPicker.accept='video/mp4,.mp4';
+            verifiedPicker.style.cssText='display:block;max-width:100%;margin:8px 0 12px;color:#eee';
+            const verifiedVideo=document.createElement('video');
+            verifiedVideo.controls=true;verifiedVideo.playsInline=true;
+            verifiedVideo.preload='metadata';
+            verifiedVideo.style.cssText='display:none;width:100%;max-width:520px;background:#000;border-radius:10px;margin:8px 0';
+            const verifiedStatus=document.createElement('p');
+            verifiedStatus.style.cssText='font-size:12px;color:#cfc0dd;margin:6px 0';
+            verifiedStatus.textContent='Riproduzione locale senza caricamento online. La conversione automatica da UMD ISO non è ancora disponibile.';
+            let verifiedUrl=null;
+            verifiedPicker.onchange=()=>{
+              const selected=verifiedPicker.files?.[0];
+              if(!selected)return;
+              if(verifiedUrl)URL.revokeObjectURL(verifiedUrl);
+              verifiedUrl=URL.createObjectURL(selected);
+              verifiedVideo.src=verifiedUrl;verifiedVideo.style.display='block';
+              verifiedVideo.onerror=()=>{verifiedStatus.textContent='Safari non supporta questo file (errore '+(verifiedVideo.error?.code??'?')+'). Usa un MP4 H.264 progressivo compatibile.';};
+              verifiedVideo.onloadedmetadata=()=>{verifiedStatus.textContent='File locale pronto: '+selected.name+' · '+verifiedVideo.duration.toFixed(2)+' s. Premi Play.';};
+              verifiedVideo.load();
+            };
+            nativeVideo.insertAdjacentElement('afterend',verifiedLabel);
+            verifiedLabel.insertAdjacentElement('afterend',verifiedPicker);
+            verifiedPicker.insertAdjacentElement('afterend',verifiedVideo);
+            verifiedVideo.insertAdjacentElement('afterend',verifiedStatus);
             const mp4Export=document.createElement('button');
             mp4Export.type='button';
             mp4Export.textContent='ESPORTA MP4 GENERATO (per analisi)';
@@ -548,7 +578,7 @@ isoPicker.onchange=async e=>{
                 if(nativeUrl)URL.revokeObjectURL(nativeUrl);
                 nativeUrl=URL.createObjectURL(frameNativeMp4(frameCandidate));
                 nativeVideo.src=nativeUrl;nativeVideo.style.display='block';
-                frameReport.textContent='Test nativo MP4 con coppie di campi interlacciati, senza ricodifica e senza audio: premi Play. Timestamp di composizione ancora sperimentali.';
+                frameReport.textContent='Test nativo MP4 con coppie di campi interlacciati, senza ricodifica e senza audio: premi Play. Non è un file progressivo ricodificato; potrebbe essere incompatibile con Safari.';
                 nativeVideo.onerror=()=>{frameReport.textContent='Safari non riesce ad aprire il MP4 generato (errore media '+(nativeVideo.error?.code??'?')+'). Non è una riproduzione valida.';};
                 nativeVideo.onloadedmetadata=()=>{frameReport.textContent='Safari ha letto MP4: '+nativeVideo.duration.toFixed(2)+' secondi. Premi Play; controlla righe verdi e fluidità.';};
                 nativeVideo.load();
