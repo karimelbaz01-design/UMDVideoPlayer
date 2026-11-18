@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v42 · restore native rendering';
+const FRAME_INSPECTOR_VERSION='UMD v43 · alternate GOP probes';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -467,6 +467,17 @@ isoPicker.onchange=async e=>{
             const frameReport=document.createElement('p');
             frameReport.style.cssText='font-size:12px;color:#c6bccc;overflow-wrap:anywhere';
             let frameCandidate=null;
+            const movieSamples=[];
+            const samplePicker=document.createElement('select');
+            samplePicker.setAttribute('aria-label','Seleziona il punto del film da decodificare');
+            samplePicker.style.cssText='display:none;width:100%;max-width:100%;margin-top:12px;padding:12px;border:1px solid #a98bce;border-radius:10px;background:#211a2c;color:#fff;font-size:15px';
+            samplePicker.onchange=()=>{
+              const sample=movieSamples[Number(samplePicker.value)];
+              frameCandidate=sample?.data||null;
+              frameReport.textContent=sample?'Punto selezionato: '+sample.percent+'% del file MPS, '+sample.data.length+' byte di video. Premi il test hardware per confrontare le immagini.':'';
+              if(frameCanvas._framePlayback)frameCanvas._framePlayback.stop();
+              frameCanvas.style.display='none';
+            };
             frameButton.onclick=async()=>{
               if(!frameCandidate)return;
               frameButton.disabled=true;
@@ -494,7 +505,7 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;frameButton.style.display='none';alternateButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';alternateButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca in corso su 16 posizioni del file MPS…';
               try{
                 const sections=16,windowBytes=524288;
@@ -545,7 +556,7 @@ isoPicker.onchange=async e=>{
                     if(type===9)nals.aud++;
                     j+=p;
                   }
-                  if(!frameCandidate&&nals.sps&&nals.pps&&nals.idr&&nals.aud){
+                  if(movieSamples.length<8&&nals.sps&&nals.pps&&nals.idr&&nals.aud){
                     // Keep only a bounded local sample. Trim to a parameter set
                     // before the first IDR so the decoder starts on a keyframe.
                     const marks=[];
@@ -561,7 +572,7 @@ isoPicker.onchange=async e=>{
                       if(first>=0&&marks.slice(first,idr).some(x=>x.type===8)){
                         const cut=marks[first].at;
                         const candidate=elementary.slice(cut);
-                        if(candidate.length>1000)frameCandidate=candidate;
+                        if(candidate.length>1000)movieSamples.push({percent:Math.round(offset/Math.max(1,mps.size)*100),data:candidate});
                       }
                     }
                   }
@@ -570,12 +581,23 @@ isoPicker.onchange=async e=>{
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
                 const candidates=rows.filter(r=>r.sps&&r.pps&&r.idr);
-                if(frameCandidate){frameButton.style.display='block';alternateButton.style.display='block';frameReport.textContent='Campione PES disponibile: '+frameCandidate.length+' byte. Il test è sperimentale e può mostrare artefatti.';}
+                if(movieSamples.length){
+                  movieSamples.forEach((sample,i)=>{
+                    const option=document.createElement('option');
+                    option.value=String(i);
+                    option.textContent='Punto '+sample.percent+'% · '+Math.round(sample.data.length/1024)+' KiB';
+                    samplePicker.appendChild(option);
+                  });
+                  samplePicker.style.display='block';
+                  frameCandidate=movieSamples[0].data;
+                  frameButton.style.display='block';alternateButton.style.display='block';
+                  frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
+                }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,frameButton,alternateButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,samplePicker,frameButton,alternateButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
