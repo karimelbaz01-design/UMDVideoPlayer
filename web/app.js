@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v49 · PES PTS continuity diagnostics';
+const FRAME_INSPECTOR_VERSION='UMD v50 · PES boundaries and PTS DTS comparison';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -525,6 +525,7 @@ isoPicker.onchange=async e=>{
                   const videoParts=[];
                   let pesPackets=0,videoBytes=0;
                   let ptsPackets=0,dtsPackets=0,invalidPts=0,backwardPts=0,largePtsGaps=0;
+                  let ptsDtsDifferent=0,ptsDtsMaxMs=0,invalidPes=0,splitNalPrefixes=0;
                   let firstPts=null,lastPts=null;
                   const readClock=(at)=>{
                     if(at+4>=bytes.length)return null;
@@ -545,7 +546,7 @@ isoPicker.onchange=async e=>{
                     const header=bytes[pos+8];
                     const end=length?pos+6+length:bytes.length;
                     const begin=pos+9+header;
-                    if((bytes[pos+6]&0xc0)!==0x80||begin>end||end>bytes.length||!length){pos++;continue;}
+                    if((bytes[pos+6]&0xc0)!==0x80||begin>end||end>bytes.length||!length){invalidPes++;pos++;continue;}
                     if(id>=0xe0&&id<=0xef&&begin<end){
                       const flags=(bytes[pos+7]>>6)&3;
                       if(flags===2||flags===3){
@@ -562,7 +563,30 @@ isoPicker.onchange=async e=>{
                           }
                           lastPts=pts;
                         }
-                        if(flags===3&&readClock(pos+14)!==null)dtsPackets++;
+                        if(flags===3){
+                          const dts=readClock(pos+14);
+                          if(dts!==null){
+                            dtsPackets++;
+                            const pts=readClock(pos+9);
+                            if(pts!==null){
+                              let diff=pts-dts;
+                              if(diff<-(2**32))diff+=2**33;
+                              if(diff>2**32)diff-=2**33;
+                              if(diff!==0)ptsDtsDifferent++;
+                              ptsDtsMaxMs=Math.max(ptsDtsMaxMs,Math.round(Math.abs(diff)/90));
+                            }
+                          }
+                        }
+                      }
+                      if(videoParts.length){
+                        const prev=videoParts[videoParts.length-1];
+                        const tail=prev.subarray(Math.max(0,prev.length-3));
+                        const head=bytes.subarray(begin,Math.min(end,begin+3));
+                        const combo=new Uint8Array(tail.length+head.length);
+                        combo.set(tail);combo.set(head,tail.length);
+                        for(let k=Math.max(0,tail.length-3);k<tail.length;k++){
+                          if(combo[k]===0&&combo[k+1]===0&&(combo[k+2]===1||(combo[k+2]===0&&combo[k+3]===1)))splitNalPrefixes++;
+                        }
                       }
                       videoParts.push(bytes.subarray(begin,end));
                       videoBytes+=end-begin;
@@ -617,7 +641,7 @@ isoPicker.onchange=async e=>{
                       }
                     }
                   }
-                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,ptsPackets,dtsPackets,invalidPts,backwardPts,largePtsGaps,ptsSpanSeconds:firstPts!==null&&lastPts!==null?Math.round((lastPts-firstPts)/9000)/10:null,...nals});
+                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,ptsPackets,dtsPackets,invalidPts,backwardPts,largePtsGaps,ptsDtsDifferent,ptsDtsMaxMs,invalidPes,splitNalPrefixes,ptsSpanSeconds:firstPts!==null&&lastPts!==null?Math.round((lastPts-firstPts)/9000)/10:null,...nals});
                   if(index%4===3)scanReport.textContent='Analizzate '+(index+1)+'/'+sections+' posizioni…';
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
@@ -634,7 +658,7 @@ isoPicker.onchange=async e=>{
                   frameButton.style.display='block';alternateButton.style.display='block';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
-                scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
+                scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
