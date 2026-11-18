@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v12 · NAL quality and SPS';
+const FRAME_INSPECTOR_VERSION='UMD v13 · SPS dimensions';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -236,6 +236,41 @@ isoPicker.onchange=async e=>{
             const units={complete:0,partial:starts.length?1:0,sps:0,pps:0,idr:0,sei:0,other:0,invalid:0,maxSize:0};
             const parameters=[];
             const spsHeaders=[];
+            const parseSpsDimensions=(nal)=>{
+              try{
+                if(nal.length<5||(nal[0]&31)!==7)return null;
+                const raw=[];for(let q=1;q<nal.length;q++){
+                  if(q>=3&&nal[q]===3&&nal[q-1]===0&&nal[q-2]===0)continue;
+                  raw.push(nal[q]);
+                }
+                let bit=0;const read=(n)=>{if(n<0||n>32||bit+n>raw.length*8)throw Error('short SPS');let v=0;for(let j=0;j<n;j++){v=v*2+((raw[bit>>3]>>(7-(bit&7)))&1);bit++;}return v;};
+                const ue=()=>{let zeros=0;while(read(1)===0){zeros++;if(zeros>24)throw Error('invalid Golomb');}return (2**zeros)-1+(zeros?read(zeros):0);};
+                const se=()=>{const v=ue();return v&1?(v+1)/2:-(v/2);};
+                const profile=read(8),constraints=read(8),level=read(8);ue();
+                let chroma=1;
+                if([100,110,122,244,44,83,86,118,128,138,139,134,135].includes(profile)){
+                  chroma=ue();if(chroma===3)read(1);
+                  ue();ue();read(1);
+                  if(read(1)){for(let i=0;i<(chroma!==3?8:12);i++)if(read(1)){let last=8,next=8;const n=i<6?16:64;for(let j=0;j<n;j++){if(next!==0)next=(last+se()+256)%256;last=next===0?last:next;}}}
+                }
+                ue();const poc=ue();
+                if(poc===0)ue();
+                else if(poc===1){read(1);se();se();const count=ue();if(count>256)throw Error('poc');for(let i=0;i<count;i++)se();}
+                ue();read(1);const w=ue(),h=ue();const frameOnly=read(1);
+                if(!frameOnly)read(1);
+                read(1);const cropFlag=read(1);
+                let left=0,right=0,top=0,bottom=0;
+                if(cropFlag){left=ue();right=ue();top=ue();bottom=ue();}
+                const subWidth=chroma===1||chroma===2?2:1,subHeight=chroma===1?2:1;
+                const cropX=chroma===0?1:subWidth,cropY=chroma===0?(2-frameOnly):subHeight*(2-frameOnly);
+                const width=(w+1)*16-(left+right)*cropX,height=(h+1)*16*(2-frameOnly)-(top+bottom)*cropY;
+                if(width<=0||height<=0||width>8192||height>8192)throw Error('dimensions');
+                return {width,height,profile,level,constraints};
+              }catch(e){return null;}
+            };
+            const dimensions=[];
+            const seenDimensions=new Set();
+
             const seenSps=new Set();
             let suspiciousShort=0, emulationMarkers=0;
             for(let j=0;j+1<starts.length;j++){
@@ -253,6 +288,8 @@ isoPicker.onchange=async e=>{
                 if(parameters.length<4)parameters.push('SPS '+length+' byte');
                 if(length>=4){
                   const profile=joined[a.header+1],constraints=joined[a.header+2],level=joined[a.header+3];
+                  const parsed=parseSpsDimensions(joined.subarray(a.header,b.at));
+                  if(parsed){const dims=parsed.width+'x'+parsed.height;if(!seenDimensions.has(dims)){seenDimensions.add(dims);dimensions.push(dims);}}
                   const signature=profile+':'+constraints+':'+level;
                   if(!seenSps.has(signature)){
                     seenSps.add(signature);
@@ -270,6 +307,7 @@ isoPicker.onchange=async e=>{
             if(parameters.length)umdDetails.push('Parametri trovati: '+parameters.join('; ')+' (contenuto non ancora interpretato)');
             umdDetails.push('Controllo qualità NAL: unità sotto 4 byte='+suspiciousShort+', marcatori emulation_prevention='+emulationMarkers);
             umdDetails.push('SPS (header preliminare): '+(spsHeaders.length?spsHeaders.join(' | '):'nessun header SPS completo nel campione'));
+            umdDetails.push('Risoluzione SPS decodificata (campione): '+(dimensions.length?dimensions.join(' | '):'non determinata; dati incompleti o non validi'));
             umdDetails.push('Attenzione: le NAL sono delimitate sintatticamente, non ancora validate con un decoder H.264.');
             umdDetails.push('Verifica necessaria: le NAL possono attraversare PES non inclusi nel campione; nessun frame è ancora decodificato.');
 
