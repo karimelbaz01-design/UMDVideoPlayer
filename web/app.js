@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v34 · PES frame probe';
+const FRAME_INSPECTOR_VERSION='UMD v35 · complete H264 access units';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -473,7 +473,7 @@ isoPicker.onchange=async e=>{
               frameCanvas.style.display='block';
               frameReport.textContent='Tentativo WebCodecs sul video estratto dai PES…';
               try{
-                await framePreviewH264(frameCandidate,frameCanvas,frameReport);
+                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport);
                 frameReport.textContent='TEST FILM PES: '+frameReport.textContent+' Controlla visivamente: righe verdi o immagini distorte NON sono un fotogramma valido.';
               }catch(err){frameReport.textContent='Test PES non riuscito: '+err.message;}
               finally{frameButton.disabled=false;}
@@ -791,6 +791,73 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
 // Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
 // with Annex-B access units grouped at AUD boundaries (NAL type 9).
 // No upload or remote conversion; unsupported Safari versions show an error.
+async function frameDecodeMovieAccessUnits(data,canvas,status){
+  if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
+    throw Error('WebCodecs non disponibile in questo browser.');
+  const nals=[];
+  for(let i=0;i+4<data.length;){
+    if(data[i]!==0||data[i+1]!==0){i++;continue;}
+    const prefix=data[i+2]===1?3:(data[i+2]===0&&data[i+3]===1?4:0);
+    if(!prefix){i++;continue;}
+    const header=i+prefix;
+    if(header<data.length)nals.push({at:i,header,type:data[header]&31});
+    i=header+1;
+  }
+  const aud=nals.filter(n=>n.type===9);
+  if(aud.length<3)throw Error('Meno di tre delimitatori AUD: impossibile ricostruire access unit complete.');
+  const units=[];
+  // Only emit complete AUD-to-AUD units. Never decode the truncated final unit.
+  for(let j=0;j+1<aud.length;j++){
+    const begin=aud[j].at,end=aud[j+1].at;
+    const members=nals.filter(n=>n.at>=begin&&n.at<end);
+    const hasIDR=members.some(n=>n.type===5);
+    if(members.some(n=>n.type===1||n.type===5))units.push({begin,end,hasIDR,members});
+  }
+  const firstKey=units.findIndex(u=>u.hasIDR);
+  if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
+  const first=units[firstKey];
+  const preceding=nals.filter(n=>n.at<first.end);
+  const sps=[...preceding].reverse().find(n=>n.type===7);
+  const pps=[...preceding].reverse().find(n=>n.type===8);
+  if(!sps||!pps||sps.header+3>=data.length)
+    throw Error('Parametri SPS/PPS mancanti prima del primo fotogramma IDR.');
+  const codec='avc1.'+Array.from(data.subarray(sps.header+1,sps.header+4),b=>b.toString(16).padStart(2,'0')).join('');
+  const config={codec,hardwareAcceleration:'prefer-software',optimizeForLatency:true,avc:{format:'annexb'}};
+  const supported=await VideoDecoder.isConfigSupported(config);
+  if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
+  const prefix=data.subarray(sps.at,pps.at);
+  const ppsEnd=nals.find(n=>n.at>pps.at)?.at??first.begin;
+  const params=new Uint8Array(prefix.length+Math.max(0,ppsEnd-pps.at));
+  params.set(prefix);params.set(data.subarray(pps.at,ppsEnd),prefix.length);
+  let decoded=0,decoderError=null,firstFrame=null;
+  const decoder=new VideoDecoder({
+    output(frame){decoded++;if(!firstFrame)firstFrame=frame;else frame.close();},
+    error(err){decoderError=err;}
+  });
+  try{
+    decoder.configure(config);
+    const selected=units.slice(firstKey,firstKey+45);
+    for(let i=0;i<selected.length;i++){
+      if(decoder.state==='closed')break;
+      const unit=selected[i];
+      let chunk=data.slice(unit.begin,unit.end);
+      if(i===0){
+        const combined=new Uint8Array(params.length+chunk.length);
+        combined.set(params);combined.set(chunk,params.length);chunk=combined;
+      }
+      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:i*33333,data:chunk}));
+      if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    if(decoder.state!=='closed')await decoder.flush();
+    if(!firstFrame)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    canvas.width=firstFrame.displayWidth;canvas.height=firstFrame.displayHeight;
+    canvas.getContext('2d').drawImage(firstFrame,0,0);
+    status.textContent='PES: '+selected.length+' access unit complete, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Verifica visivamente eventuali artefatti.';
+  }finally{
+    if(firstFrame)firstFrame.close();
+    if(decoder.state!=='closed')decoder.close();
+  }
+}
 async function framePreviewH264(data,canvas,status,signal){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs VideoDecoder non supportato in questo browser. Usa Safari aggiornato o la futura app nativa.');
