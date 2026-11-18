@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v48 · timestamp and NAL validation';
+const FRAME_INSPECTOR_VERSION='UMD v49 · PES PTS continuity diagnostics';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -524,6 +524,14 @@ isoPicker.onchange=async e=>{
                   // at a plausible pack header and never count raw MPS bytes.
                   const videoParts=[];
                   let pesPackets=0,videoBytes=0;
+                  let ptsPackets=0,dtsPackets=0,invalidPts=0,backwardPts=0,largePtsGaps=0;
+                  let firstPts=null,lastPts=null;
+                  const readClock=(at)=>{
+                    if(at+4>=bytes.length)return null;
+                    const a=bytes[at],b=bytes[at+1],c=bytes[at+2],d=bytes[at+3],e=bytes[at+4];
+                    if((a&1)!==1||(c&1)!==1||(e&1)!==1)return null;
+                    return ((a>>1)&7)*1073741824 + b*4194304 + ((c>>1)&127)*32768 + d*128 + (e>>1);
+                  };
                   for(let pos=0;pos+14<bytes.length;){
                     if(bytes[pos]!==0||bytes[pos+1]!==0||bytes[pos+2]!==1){pos++;continue;}
                     const id=bytes[pos+3];
@@ -539,6 +547,23 @@ isoPicker.onchange=async e=>{
                     const begin=pos+9+header;
                     if((bytes[pos+6]&0xc0)!==0x80||begin>end||end>bytes.length||!length){pos++;continue;}
                     if(id>=0xe0&&id<=0xef&&begin<end){
+                      const flags=(bytes[pos+7]>>6)&3;
+                      if(flags===2||flags===3){
+                        const pts=readClock(pos+9);
+                        if(pts===null)invalidPts++;
+                        else{
+                          ptsPackets++;
+                          if(firstPts===null)firstPts=pts;
+                          if(lastPts!==null){
+                            let diff=pts-lastPts;
+                            if(diff<-(2**32))diff+=2**33;
+                            if(diff<0)backwardPts++;
+                            if(diff>90000)largePtsGaps++;
+                          }
+                          lastPts=pts;
+                        }
+                        if(flags===3&&readClock(pos+14)!==null)dtsPackets++;
+                      }
                       videoParts.push(bytes.subarray(begin,end));
                       videoBytes+=end-begin;
                       pesPackets++;
@@ -592,7 +617,7 @@ isoPicker.onchange=async e=>{
                       }
                     }
                   }
-                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,...nals});
+                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,ptsPackets,dtsPackets,invalidPts,backwardPts,largePtsGaps,ptsSpanSeconds:firstPts!==null&&lastPts!==null?Math.round((lastPts-firstPts)/9000)/10:null,...nals});
                   if(index%4===3)scanReport.textContent='Analizzate '+(index+1)+'/'+sections+' posizioni…';
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
