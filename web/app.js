@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v43 · alternate GOP probes';
+const FRAME_INSPECTOR_VERSION='UMD v44 · hardware preview visibility fix';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -477,6 +477,8 @@ isoPicker.onchange=async e=>{
               frameReport.textContent=sample?'Punto selezionato: '+sample.percent+'% del file MPS, '+sample.data.length+' byte di video. Premi il test hardware per confrontare le immagini.':'';
               if(frameCanvas._framePlayback)frameCanvas._framePlayback.stop();
               frameCanvas.style.display='none';
+              alternateButton.disabled=false;
+              frameButton.disabled=false;
             };
             frameButton.onclick=async()=>{
               if(!frameCandidate)return;
@@ -496,7 +498,8 @@ isoPicker.onchange=async e=>{
             alternateButton.onclick=async()=>{
               if(!frameCandidate)return;
               alternateButton.disabled=true;
-              frameReport.textContent='Prova del percorso hardware WebCodecs…';
+              frameCanvas.style.display='block';
+              frameReport.textContent='Prova del percorso hardware WebCodecs sul punto '+(movieSamples[Number(samplePicker.value)]?.percent??'?')+'%…';
               try{
                 await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-hardware');
                 frameReport.textContent+=' Il browser può usare lo stesso decoder anche con questa preferenza; il confronto visivo non garantisce un percorso diverso.';
