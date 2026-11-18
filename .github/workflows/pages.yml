@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v10 PES demux probe
+# Deploy FRAME UMD v11 Annex-B assembly
 on:
   push:
     branches: [main]
