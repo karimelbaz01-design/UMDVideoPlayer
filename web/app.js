@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v53 · Annex-B AUD comparison';
+const FRAME_INSPECTOR_VERSION='UMD v54 · frame reordering latency fix';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -970,7 +970,9 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   if(!sps||!pps||sps.header+3>=data.length)
     throw Error('Parametri SPS/PPS mancanti prima del primo fotogramma IDR.');
   const codec='avc1.'+Array.from(data.subarray(sps.header+1,sps.header+4),b=>b.toString(16).padStart(2,'0')).join('');
-  const config={codec,hardwareAcceleration:acceleration,optimizeForLatency:true,avc:{format:'annexb'}};
+  // UMD video may contain reordered B pictures (PTS != DTS).
+  // Low-latency decoding can compromise frame reordering; disable it.
+  const config={codec,hardwareAcceleration:acceleration,optimizeForLatency:false,avc:{format:'annexb'}};
   const supported=await VideoDecoder.isConfigSupported(config);
   if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
   const prefix=data.subarray(sps.at,pps.at);
@@ -1018,6 +1020,9 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     }
     if(decoder.state!=='closed')await decoder.flush();
     if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    // Keep decoder output order and report whether it differs from
+    // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
+    const outputReorders=pictures.reduce((n,p,i)=>n+(i>0&&p.timestamp<pictures[i-1].timestamp?1:0),0);
     pictures.sort((a,b)=>a.timestamp-b.timestamp);
     const timestamps=pictures.map(p=>p.timestamp);
     const uniqueTimestamps=new Set(timestamps).size;
@@ -1114,7 +1119,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
