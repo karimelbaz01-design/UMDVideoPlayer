@@ -1,4 +1,5 @@
 name: Publish FRAME Web
+# Refresh web preview after iOS ISO picker diagnostics
 on:
   push:
     branches: [main]
