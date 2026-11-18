@@ -117,7 +117,29 @@ isoPicker.onchange=async e=>{
       if(sfo)metadata=await inspectSfo(file,sfo);
       detail='Elementi nella cartella '+selected.name+': '+contents.slice(0,24).map(r=>r.name).join(', ');
     }
-    const report=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),...Object.entries(metadata).map(([key,value])=>key+': '+value),detail,'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'];
+    let umdDetails=[];
+    if(umd&&selected){
+      const contents=await inspectIsoDirectory(file,selected.extent,selected.size);
+      for(const folder of ['STREAM','CLIPINF']){
+        const rec=contents.find(r=>r.directory&&r.name.toUpperCase()===folder);
+        if(!rec)continue;
+        const entries=await inspectIsoDirectory(file,rec.extent,rec.size);
+        const files=entries.filter(r=>!r.directory);
+        umdDetails.push(folder+': '+files.length+' file');
+        umdDetails.push(...files.slice(0,12).map(r=>'  '+r.name+' — '+(r.size/1048576).toFixed(2)+' MiB'));
+        if(files.length>12)umdDetails.push('  … e altri '+(files.length-12)+' file');
+      }
+      const playlist=contents.find(r=>r.name.toUpperCase()==='PLAYLIST.UMD'&&!r.directory);
+      if(playlist){
+        umdDetails.push('PLAYLIST.UMD: '+playlist.size+' byte (presente)');
+        if(playlist.extent*2048+playlist.size<=file.size&&playlist.size<=8388608){
+          const header=new Uint8Array(await file.slice(playlist.extent*2048,playlist.extent*2048+Math.min(64,playlist.size)).arrayBuffer());
+          umdDetails.push('Intestazione playlist (hex): '+Array.from(header.slice(0,24),b=>b.toString(16).padStart(2,'0')).join(' '));
+        }
+      }
+      umdDetails.push('Lettura STREAM/CLIPINF: sola ispezione; decoder e audio UMD non integrati nel browser.');
+    }
+    const report=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),...Object.entries(metadata).map(([key,value])=>key+': '+value),detail,...umdDetails,'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'];
     out.textContent=report.filter(Boolean).join(String.fromCharCode(10));
   }catch(err){out.textContent='Analisi non riuscita: '+err.message;}
   finally{e.target.value='';}
