@@ -236,6 +236,25 @@ isoPicker.onchange=async e=>{
               const a=document.createElement('a');a.href=href;a.download='ICON1-video-esperimento.h264';
               a.textContent='Esporta flusso H.264 sperimentale';a.style.cssText='display:block;margin:10px 0;color:#c5a5ff;text-decoration:underline';
               panel.appendChild(a);
+              const previewButton=document.createElement('button');
+              previewButton.type='button';
+              previewButton.textContent='▶ RIPRODUCI ANTEPRIMA ANIMATA (BETA)';
+              previewButton.style.cssText='display:block;margin:12px 0;padding:12px;border:0;border-radius:10px;background:#bba0f4;color:#15111e;font-weight:700;max-width:100%';
+              const canvas=document.createElement('canvas');
+              canvas.width=288;canvas.height=160;
+              canvas.style.cssText='display:none;width:288px;max-width:100%;aspect-ratio:9/5;background:#000;border-radius:10px;image-rendering:auto';
+              const status=document.createElement('p');
+              status.style.cssText='font-size:13px;color:#c6bccc;overflow-wrap:anywhere';
+              previewButton.onclick=async()=>{
+                previewButton.disabled=true;
+                canvas.style.display='block';
+                status.textContent='Preparazione decoder H.264…';
+                try{
+                  await framePreviewH264(elementary,canvas,status);
+                }catch(err){status.textContent='Anteprima non disponibile: '+err.message;}
+                finally{previewButton.disabled=false;}
+              };
+              panel.append(previewButton,canvas,status);
             }
 
           }
@@ -535,4 +554,60 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
     preview.addEventListener('click', () => window.FrameNative.previewUmd());
     watch.insertBefore(preview, watch.querySelector('.panel'));
   }
+}
+
+
+// Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
+// with Annex-B access units grouped at AUD boundaries (NAL type 9).
+// No upload or remote conversion; unsupported Safari versions show an error.
+async function framePreviewH264(data,canvas,status){
+  if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
+    throw Error('WebCodecs VideoDecoder non supportato in questo browser. Usa Safari aggiornato o la futura app nativa.');
+  const nals=[];
+  for(let i=0;i+4<data.length;){
+    if(data[i]!==0||data[i+1]!==0){i++;continue;}
+    const prefix=data[i+2]===1?3:(data[i+2]===0&&data[i+3]===1?4:0);
+    if(!prefix){i++;continue;}
+    nals.push({start:i,header:i+prefix,type:data[i+prefix]&31});
+    i+=prefix;
+  }
+  if(!nals.length)throw Error('Nessuna unità H.264 trovata.');
+  // AUD identifies access-unit boundaries in this PSP PMF sample.
+  const boundaries=[];
+  for(const nal of nals)if(nal.type===9&&nal.start>0)boundaries.push(nal.start);
+  const slices=[];let start=0;
+  for(const at of boundaries){if(at>start){slices.push(data.slice(start,at));start=at;}}
+  if(start<data.length)slices.push(data.slice(start));
+  if(slices.length<2)throw Error('Nessun confine fra fotogrammi rilevato.');
+  const sps=nals.find(n=>n.type===7);
+  const codec=sps&&sps.header+3<data.length?
+    'avc1.'+Array.from(data.slice(sps.header+1,sps.header+4),x=>x.toString(16).padStart(2,'0')).join(''):'avc1.4d401e';
+  const config={codec,hardwareAcceleration:'prefer-software',optimizeForLatency:true};
+  const support=await VideoDecoder.isConfigSupported(config);
+  if(!support.supported)throw Error('Codec '+codec+' non supportato da WebCodecs.');
+  const ctx=canvas.getContext('2d');
+  let frames=0,decodeError=null;
+  const decoder=new VideoDecoder({
+    output:frame=>{
+      try{ctx.drawImage(frame,0,0,canvas.width,canvas.height);frames++;status.textContent='Anteprima UMD: '+frames+' fotogrammi decodificati (senza audio).';}
+      finally{frame.close();}
+    },
+    error:err=>{decodeError=err;status.textContent='Errore decoder H.264: '+err.message;}
+  });
+  try{
+    decoder.configure(config);
+    let timestamp=0;
+    for(let i=0;i<slices.length;i++){
+      if(decoder.state==='closed')break;
+      const chunk=new EncodedVideoChunk({
+        type:i===0?'key':'delta',timestamp,data:slices[i]
+      });
+      decoder.decode(chunk);
+      timestamp+=33333;
+      if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,30));
+    }
+    if(decoder.state!=='closed')await decoder.flush();
+    if(!frames)throw Error(decodeError?.message||'Nessun fotogramma decodificato. Il campione potrebbe richiedere un diverso raggruppamento dei PES.');
+    status.textContent='Anteprima completata: '+frames+' fotogrammi decodificati. Nessun audio.';
+  }finally{if(decoder.state!=='closed')decoder.close();}
 }
