@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v15 extended sample
+# Deploy FRAME UMD v16 slice diagnostics
 on:
   push:
     branches: [main]
