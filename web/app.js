@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v23 · PMF PES extraction';
+const FRAME_INSPECTOR_VERSION='UMD v24 · PMF timed playback';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -625,12 +625,42 @@ async function framePreviewH264(data,canvas,status){
       samples.push(hash.toString(16));
     }
     const unique=new Set(samples).size;
-    status.textContent='Fotogrammi: '+frames.length+'; campioni 1 / metà / ultimo: '+unique+' immagini differenti su 3. Riproduzione in corso…';
-    for(let i=0;i<frames.length;i++){
-      ctx.drawImage(frames[i],0,0,canvas.width,canvas.height);
-      await new Promise(resolve=>setTimeout(resolve,100));
+    // WebCodecs returns frames in presentation order. Respect their timestamps
+    // instead of assuming a fixed frame rate or racing through the canvas.
+    const firstTimestamp=frames[0].timestamp;
+    const durationUs=Math.max(0,frames[frames.length-1].timestamp-firstTimestamp);
+    const fps=durationUs>0?Math.round((frames.length-1)*1000000/durationUs):0;
+    const diagnostic=document.createElement('div');
+    diagnostic.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin:10px 0';
+    for(let j=0;j<snapshots.length;j++){
+      const thumb=document.createElement('canvas');
+      thumb.width=144;thumb.height=80;
+      thumb.style.cssText='width:30%;max-width:144px;min-width:85px;border-radius:6px;background:#000';
+      thumb.getContext('2d').drawImage(frames[snapshots[j]],0,0,144,80);
+      const wrap=document.createElement('div');
+      wrap.style.cssText='flex:1;min-width:85px;max-width:144px;font-size:11px;color:#c6bccc';
+      wrap.append(thumb,document.createTextNode(['Inizio','Metà','Fine'][j]));
+      diagnostic.appendChild(wrap);
     }
-    status.textContent='Anteprima riprodotta: '+frames.length+' fotogrammi a 10 fps (rallentati per diagnosi). Campioni differenti: '+unique+'/3. Nessun audio.';
+    canvas.insertAdjacentElement('afterend',diagnostic);
+    status.textContent='Campioni differenti: '+unique+'/3. '+frames.length+' fotogrammi; '+(fps||'FPS non rilevati')+' fps stimati. Riproduzione…';
+    const startTime=performance.now();
+    let lastShown=-1;
+    await new Promise(resolve=>{
+      function tick(now){
+        const elapsedUs=(now-startTime)*1000;
+        let target=lastShown+1;
+        while(target+1<frames.length&&frames[target+1].timestamp-firstTimestamp<=elapsedUs)target++;
+        if(target<frames.length&&target!==lastShown){
+          ctx.drawImage(frames[target],0,0,canvas.width,canvas.height);
+          lastShown=target;
+        }
+        if(lastShown>=frames.length-1)resolve();
+        else requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    status.textContent='Anteprima terminata: '+frames.length+' fotogrammi, '+(fps||'?')+' fps stimati, '+unique+'/3 campioni differenti. Miniature inizio/metà/fine visibili. Nessun audio.';
   }finally{
     for(const frame of frames)frame.close();
     if(decoder.state!=='closed')decoder.close();
