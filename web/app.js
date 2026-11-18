@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v47 · cleaner startup selection';
+const FRAME_INSPECTOR_VERSION='UMD v48 · timestamp and NAL validation';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -858,12 +858,15 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const aud=nals.filter(n=>n.type===9);
   if(aud.length<3)throw Error('Meno di tre delimitatori AUD: impossibile ricostruire access unit complete.');
   const units=[];
-  // Only emit complete AUD-to-AUD units. Never decode the truncated final unit.
+  // Bound each access unit at the following AUD. Reject malformed NAL
+  // headers and incomplete slice payloads instead of feeding partial frames.
   for(let j=0;j+1<aud.length;j++){
     const begin=aud[j].at,end=aud[j+1].at;
     const members=nals.filter(n=>n.at>=begin&&n.at<end);
-    const hasIDR=members.some(n=>n.type===5);
-    if(members.some(n=>n.type===1||n.type===5))units.push({begin,end,hasIDR,members});
+    const slices=members.filter(n=>n.type===1||n.type===5);
+    const hasIDR=slices.some(n=>n.type===5);
+    const invalid=members.some(n=>(data[n.header]&128)!==0);
+    if(!invalid&&slices.length&&end-begin>=24)units.push({begin,end,hasIDR,members,sliceCount:slices.length});
   }
   const firstKey=units.findIndex(u=>u.hasIDR);
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
@@ -892,7 +895,9 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       const picture=document.createElement('canvas');
       picture.width=frame.displayWidth;picture.height=frame.displayHeight;
       picture.getContext('2d').drawImage(frame,0,0);
-      pictures.push(picture);decoded++;
+      // WebCodecs may output frames in presentation order, not submission
+      // order. Preserve timestamps for diagnostics and playback sorting.
+      pictures.push({canvas:picture,timestamp:frame.timestamp});decoded++;
       frame.close();
     },
     error(err){decoderError=err;}
@@ -913,6 +918,10 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     }
     if(decoder.state!=='closed')await decoder.flush();
     if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    pictures.sort((a,b)=>a.timestamp-b.timestamp);
+    const timestamps=pictures.map(p=>p.timestamp);
+    const uniqueTimestamps=new Set(timestamps).size;
+    for(let i=0;i<pictures.length;i++)pictures[i]=pictures[i].canvas;
     // The green startup is an actual decoding artifact, not a display filter.
     // Start preview after warm-up; preserve full frames for diagnostic thumbnails.
     // Inspect frames without altering pixels. Detect conspicuous green tint
@@ -1005,7 +1014,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi. Avvio automatico al fotogramma '+(warmup+1)+' (verde stimato '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Diagnosi euristica, non correzione del decoder.';
+    status.textContent='PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
