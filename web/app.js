@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v62 · preserve original AVC NAL bytes';
+const FRAME_INSPECTOR_VERSION='UMD v63 · interlaced field-pair MP4 mux';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -548,7 +548,7 @@ isoPicker.onchange=async e=>{
                 if(nativeUrl)URL.revokeObjectURL(nativeUrl);
                 nativeUrl=URL.createObjectURL(frameNativeMp4(frameCandidate));
                 nativeVideo.src=nativeUrl;nativeVideo.style.display='block';
-                frameReport.textContent='Test nativo MP4 senza ricodifica e senza audio: premi Play. Timestamp di composizione ancora sperimentali.';
+                frameReport.textContent='Test nativo MP4 con coppie di campi interlacciati, senza ricodifica e senza audio: premi Play. Timestamp di composizione ancora sperimentali.';
                 nativeVideo.onerror=()=>{frameReport.textContent='Safari non riesce ad aprire il MP4 generato (errore media '+(nativeVideo.error?.code??'?')+'). Non è una riproduzione valida.';};
                 nativeVideo.onloadedmetadata=()=>{frameReport.textContent='Safari ha letto MP4: '+nativeVideo.duration.toFixed(2)+' secondi. Premi Play; controlla righe verdi e fluidità.';};
                 nativeVideo.load();
@@ -1020,8 +1020,18 @@ function frameNativeMp4(data){
   }
   const key=units.findIndex(u=>u.key);
   if(key<0)throw Error('Nessun fotogramma IDR nel campione');
-  const samples=units.slice(key,key+90);
-  if(samples.length<5)throw Error('Campione troppo corto');
+  // UMD H.264 uses interlaced field pictures. The earlier mux treated
+  // each AUD-delimited field as a complete MP4 frame (90 samples -> ~45
+  // decoded pictures in FFmpeg). Combine consecutive fields into one
+  // sample; each sample retains both original field bitstreams.
+  const fields=units.slice(key,key+90);
+  if(fields.length<10)throw Error('Campione troppo corto');
+  const samples=[];
+  for(let k=0;k+1<fields.length;k+=2){
+    samples.push({parts:[...fields[k].parts,...fields[k+1].parts],
+      key:fields[k].key||fields[k+1].key});
+  }
+  if(samples.length<5)throw Error('Campione troppo corto dopo accoppiamento campi');
   const sampleBytes=samples.map(u=>join(...u.parts.map(p=>join(u32(p.length),p))));
   const sizes=sampleBytes.map(b=>b.length);
   const ftyp=box('ftyp',ascii('isom'),u32(512),ascii('isom'),ascii('iso2'),ascii('avc1'),ascii('mp41'));
