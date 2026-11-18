@@ -332,7 +332,7 @@ isoPicker.onchange=async e=>{
                 link.textContent='SCARICA CAMPIONE H.264 (sperimentale)';
                 link.href=url;link.download='FRAME_UMD_video_sample.h264';
                 link.style.cssText='display:inline-block;margin-top:12px;padding:12px;border-radius:10px;background:#bba0f4;color:#15111e;font-weight:700;text-decoration:none;';
-                const outNode=document.getElementById('iso-report')||document.getElementById('isoReport');
+                const outNode=document.getElementById('discReport');
                 if(outNode&&outNode.parentNode)outNode.parentNode.appendChild(link);
                 umdDetails.push('Campione H.264 esportabile: '+raw.length+' byte, da SPS a NAL dopo IDR; NON garantito decodificabile.');
               }
