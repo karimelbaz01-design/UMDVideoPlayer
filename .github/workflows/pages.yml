@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v19 cover preview
+# Deploy FRAME UMD v20 image diagnostics
 on:
   push:
     branches: [main]
