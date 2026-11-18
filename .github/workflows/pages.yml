@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy explicit UMD v6 network-first cache fix
+# Deploy UMD v7 runtime diagnostics
 on:
   push:
     branches: [main]
