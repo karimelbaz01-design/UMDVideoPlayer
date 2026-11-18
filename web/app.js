@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v27 · stream candidates';
+const FRAME_INSPECTOR_VERSION='UMD v28 · movie video decoder probe';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -406,6 +406,39 @@ isoPicker.onchange=async e=>{
             const joinedSize=videoChunks.reduce((n,c)=>n+c.length,0);
             const joined=new Uint8Array(joinedSize);
             let cursor=0;for(const c of videoChunks){joined.set(c,cursor);cursor+=c.length;}
+            // First bounded playback experiment for the actual movie stream.
+            // Unlike ICON1.PMF, these bytes come from the largest UMD .MPS.
+            // This is NOT a full movie player: the 256 KiB sample can start
+            // between keyframes and is expected to fail on some discs.
+            const previousMovieTest=document.getElementById('frame-umd-movie-test');
+            if(previousMovieTest)previousMovieTest.remove();
+            const movieTest=document.createElement('section');
+            movieTest.id='frame-umd-movie-test';
+            movieTest.style.cssText='margin:14px 0;padding:12px;border:1px solid #51445e;border-radius:12px;background:#171520;color:#eee';
+            const movieTitle=document.createElement('strong');
+            movieTitle.textContent='TEST VIDEO DEL FILM · SPERIMENTALE';
+            const movieDescription=document.createElement('p');
+            movieDescription.style.cssText='font-size:13px;color:#c6bccc;line-height:1.5';
+            movieDescription.textContent='Campione locale dal file '+mps.name+' (256 KiB MPEG-PS). Il video può non decodificarsi: non è ancora la riproduzione del film completo e non include audio.';
+            const movieButton=document.createElement('button');
+            movieButton.type='button';
+            movieButton.textContent='▶ PROVA DECODIFICA VIDEO DEL FILM';
+            movieButton.style.cssText='display:block;padding:12px;border:0;border-radius:10px;background:#bba0f4;color:#15111e;font-weight:700;max-width:100%';
+            const movieCanvas=document.createElement('canvas');
+            movieCanvas.width=288;movieCanvas.height=160;
+            movieCanvas.style.cssText='display:none;width:288px;max-width:100%;aspect-ratio:9/5;background:#000;border-radius:10px';
+            const movieStatus=document.createElement('p');
+            movieStatus.style.cssText='font-size:13px;color:#c6bccc;overflow-wrap:anywhere';
+            movieButton.onclick=async()=>{
+              movieButton.disabled=true;
+              movieCanvas.style.display='block';
+              movieStatus.textContent='Verifica decoder H.264 sul campione del film…';
+              try{await framePreviewH264(joined,movieCanvas,movieStatus);}
+              catch(err){movieStatus.textContent='Campione non decodificabile: '+err.message+'. È necessario un demux/lettore completo.';}
+              finally{movieButton.disabled=false;}
+            };
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus);
+            candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
               if(joined[k]!==0||joined[k+1]!==0)continue;
