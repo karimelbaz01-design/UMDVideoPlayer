@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v19 · cover preview';
+const FRAME_INSPECTOR_VERSION='UMD v20 · cover diagnostics';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -126,22 +126,41 @@ isoPicker.onchange=async e=>{
       const presentation=['ICON0.PNG','ICON1.PMF','PIC0.PNG','PIC1.PNG','SND0.AT3'];
       const presentationFiles=contents.filter(r=>!r.directory&&presentation.includes(r.name.toUpperCase()));
       umdDetails.push('Presentazione/copertina: '+(presentationFiles.length?presentationFiles.map(r=>r.name+' ('+r.size+' byte)').join(', '):'nessuna risorsa standard nella cartella UMD_VIDEO'));
-      const cover=contents.find(r=>!r.directory&&r.name.toUpperCase()==='ICON0.PNG');
-      const oldCover=document.getElementById('frame-umd-cover');
-      if(oldCover){if(oldCover.dataset.objectUrl)URL.revokeObjectURL(oldCover.dataset.objectUrl);oldCover.remove();}
-      if(cover&&cover.size>0&&cover.size<=8*1024*1024&&cover.extent*2048+cover.size<=file.size){
-        const signature=new Uint8Array(await file.slice(cover.extent*2048,cover.extent*2048+8).arrayBuffer());
-        if([137,80,78,71,13,10,26,10].every((b,i)=>signature[i]===b)){
-          const blob=file.slice(cover.extent*2048,cover.extent*2048+cover.size,'image/png');
-          const url=URL.createObjectURL(blob);
-          const img=document.createElement('img');
-          img.id='frame-umd-cover';img.dataset.objectUrl=url;img.alt='Immagine originale ICON0.PNG dal disco UMD';
-          img.style.cssText='display:block;max-width:min(100%,320px);max-height:240px;object-fit:contain;margin:14px auto;border-radius:12px';
-          img.onerror=()=>{URL.revokeObjectURL(url);img.remove();};
-          isoReport.insertAdjacentElement('beforebegin',img);
-          umdDetails.push('Copertina: ICON0.PNG estratta localmente e mostrata sopra il rapporto.');
-        }else umdDetails.push('ICON0.PNG: firma PNG non valida, anteprima omessa.');
+      const oldCover=document.getElementById('frame-umd-cover-panel');
+      if(oldCover){for(const img of oldCover.querySelectorAll('img'))if(img.dataset.objectUrl)URL.revokeObjectURL(img.dataset.objectUrl);oldCover.remove();}
+      const panel=document.createElement('div');panel.id='frame-umd-cover-panel';
+      panel.style.cssText='margin:14px 0;padding:12px;border:1px solid #51445e;border-radius:12px;background:#171520;color:#eee';
+      const heading=document.createElement('strong');heading.textContent='ANTEPRIMA ORIGINALE UMD';
+      const status=document.createElement('p');status.textContent='Verifica immagini del disco in corso…';status.style.cssText='font-size:13px;overflow-wrap:anywhere';
+      panel.append(heading,status);
+      isoReport.insertAdjacentElement('beforebegin',panel);
+      const images=contents.filter(r=>!r.directory&&['ICON0.PNG','PIC1.PNG'].includes(r.name.toUpperCase()));
+      let success=0,failed=0;
+      for(const rec of images){
+        const label=document.createElement('p');label.textContent=rec.name+' — '+rec.size+' byte';
+        label.style.cssText='font-size:12px;margin:8px 0 4px';
+        panel.appendChild(label);
+        const offset=rec.extent*2048;
+        if(rec.size<24||rec.size>8*1024*1024||offset+rec.size>file.size){label.textContent+=' — dati fuori intervallo';failed++;continue;}
+        const blob=file.slice(offset,offset+rec.size,'image/png');
+        const bytes=new Uint8Array(await blob.slice(0,24).arrayBuffer());
+        const valid=[137,80,78,71,13,10,26,10].every((b,i)=>bytes[i]===b);
+        const width=new DataView(bytes.buffer).getUint32(16,false),height=new DataView(bytes.buffer).getUint32(20,false);
+        if(!valid||width<1||height<1||width>8192||height>8192){label.textContent+=' — intestazione PNG non valida ('+width+'x'+height+')';failed++;continue;}
+        const url=URL.createObjectURL(blob);
+        const img=document.createElement('img');img.dataset.objectUrl=url;
+        img.alt='Immagine '+rec.name+' estratta dal disco';img.loading='eager';
+        img.style.cssText='display:block;width:auto;max-width:100%;height:auto;max-height:300px;object-fit:contain;margin:8px auto;background:#333';
+        img.onload=()=>{label.textContent+=' — visualizzata '+img.naturalWidth+'x'+img.naturalHeight;};
+        img.onerror=()=>{label.textContent+=' — Safari non riesce a decodificare il PNG';img.remove();};
+        panel.appendChild(img);img.src=url;
+        const link=document.createElement('a');link.href=url;link.download=rec.name;
+        link.textContent='Salva '+rec.name;link.style.cssText='display:inline-block;margin:5px 0 12px;color:#c5a5ff;text-decoration:underline';
+        panel.appendChild(link);success++;
       }
+      if(!images.length)status.textContent='Nessuna immagine ICON0.PNG / PIC1.PNG trovata.';
+      else status.textContent='Immagini trovate: '+images.length+'. Intestazioni PNG valide: '+success+'. Non valide: '+failed+'. Se resta vuoto, usa Salva per verificare il file originale.';
+      umdDetails.push('Anteprima UMD: '+images.length+' immagini trovate, '+success+' PNG con intestazione valida, '+failed+' non valide; verifica rendering in Safari sopra il rapporto.');
       umdDetails.push('Menu, film principale ed extra: NON classificati; richiedono interpretazione di PLAYLIST.UMD, CLIPINF e collegamenti tra stream.');
       const resources=contents.find(r=>r.directory&&r.name.toUpperCase()==='RESOURCE');
       if(resources){
