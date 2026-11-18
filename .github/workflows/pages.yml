@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v22 PMF stream probe
+# Deploy FRAME UMD v23 PES extraction
 on:
   push:
     branches: [main]
