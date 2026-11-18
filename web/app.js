@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v50 · PES boundaries and PTS DTS comparison';
+const FRAME_INSPECTOR_VERSION='UMD v51 · continuous NAL access unit parsing';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -907,15 +907,22 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const aud=nals.filter(n=>n.type===9);
   if(aud.length<3)throw Error('Meno di tre delimitatori AUD: impossibile ricostruire access unit complete.');
   const units=[];
-  // Bound each access unit at the following AUD. Reject malformed NAL
-  // headers and incomplete slice payloads instead of feeding partial frames.
+  // The PES payloads have already been concatenated into a continuous
+  // elementary stream. Build AUD-bounded units with a single linear pass,
+  // including NALs split across original PES boundaries.
+  let nalCursor=0,discardedUnits=0,multiSliceUnits=0;
   for(let j=0;j+1<aud.length;j++){
     const begin=aud[j].at,end=aud[j+1].at;
-    const members=nals.filter(n=>n.at>=begin&&n.at<end);
+    while(nalCursor<nals.length&&nals[nalCursor].at<begin)nalCursor++;
+    const members=[];
+    while(nalCursor<nals.length&&nals[nalCursor].at<end)members.push(nals[nalCursor++]);
     const slices=members.filter(n=>n.type===1||n.type===5);
     const hasIDR=slices.some(n=>n.type===5);
     const invalid=members.some(n=>(data[n.header]&128)!==0);
-    if(!invalid&&slices.length&&end-begin>=24)units.push({begin,end,hasIDR,members,sliceCount:slices.length});
+    if(!invalid&&slices.length&&end-begin>=24){
+      if(slices.length>1)multiSliceUnits++;
+      units.push({begin,end,hasIDR,members,sliceCount:slices.length});
+    }else discardedUnits++;
   }
   const firstKey=units.findIndex(u=>u.hasIDR);
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
@@ -1063,7 +1070,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
