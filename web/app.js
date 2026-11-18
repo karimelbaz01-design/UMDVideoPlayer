@@ -1053,7 +1053,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const avcConfig={codec,hardwareAcceleration:acceleration,optimizeForLatency:false,description:avcc};
   const avcSupported=await VideoDecoder.isConfigSupported(avcConfig);
   const useAvc=avcSupported.supported;
-  if(useAvc)Object.assign(config,avcConfig);
+  if(useAvc){delete config.avc;Object.assign(config,avcConfig);}
   const toAvc=unit=>{
     const parts=[];let total=0;
     for(let k=0;k<unit.members.length;k++){
