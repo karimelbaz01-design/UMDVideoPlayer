@@ -586,11 +586,13 @@ async function framePreviewH264(data,canvas,status){
   const support=await VideoDecoder.isConfigSupported(config);
   if(!support.supported)throw Error('Codec '+codec+' non supportato da WebCodecs.');
   const ctx=canvas.getContext('2d');
-  let frames=0,decodeError=null;
+  const frames=[];
+  let decodeError=null;
   const decoder=new VideoDecoder({
     output:frame=>{
-      try{ctx.drawImage(frame,0,0,canvas.width,canvas.height);frames++;status.textContent='Anteprima UMD: '+frames+' fotogrammi decodificati (senza audio).';}
-      finally{frame.close();}
+      if(frames.length<90)frames.push(frame);
+      else frame.close();
+      status.textContent='Decodifica UMD: '+frames.length+' fotogrammi acquisiti (senza audio).';
     },
     error:err=>{decodeError=err;status.textContent='Errore decoder H.264: '+err.message;}
   });
@@ -599,15 +601,38 @@ async function framePreviewH264(data,canvas,status){
     let timestamp=0;
     for(let i=0;i<slices.length;i++){
       if(decoder.state==='closed')break;
-      const chunk=new EncodedVideoChunk({
+      decoder.decode(new EncodedVideoChunk({
         type:i===0?'key':'delta',timestamp,data:slices[i]
-      });
-      decoder.decode(chunk);
+      }));
       timestamp+=33333;
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,30));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    if(!frames)throw Error(decodeError?.message||'Nessun fotogramma decodificato. Il campione potrebbe richiedere un diverso raggruppamento dei PES.');
-    status.textContent='Anteprima completata: '+frames+' fotogrammi decodificati. Nessun audio.';
-  }finally{if(decoder.state!=='closed')decoder.close();}
+    if(!frames.length)throw Error(decodeError?.message||'Nessun fotogramma decodificato.');
+    // Display frames at a human-visible cadence instead of drawing them all
+    // immediately in the decoder output callback.
+    const snapshots=[0,Math.floor((frames.length-1)/2),frames.length-1];
+    const samples=[];
+    for(const index of snapshots){
+      ctx.drawImage(frames[index],0,0,canvas.width,canvas.height);
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+      let hash=2166136261;
+      for(let k=0;k<pixels.length;k+=64){
+        hash=Math.imul(hash^pixels[k],16777619)>>>0;
+        hash=Math.imul(hash^pixels[k+1],16777619)>>>0;
+        hash=Math.imul(hash^pixels[k+2],16777619)>>>0;
+      }
+      samples.push(hash.toString(16));
+    }
+    const unique=new Set(samples).size;
+    status.textContent='Fotogrammi: '+frames.length+'; campioni 1 / metà / ultimo: '+unique+' immagini differenti su 3. Riproduzione in corso…';
+    for(let i=0;i<frames.length;i++){
+      ctx.drawImage(frames[i],0,0,canvas.width,canvas.height);
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    status.textContent='Anteprima riprodotta: '+frames.length+' fotogrammi a 10 fps (rallentati per diagnosi). Campioni differenti: '+unique+'/3. Nessun audio.';
+  }finally{
+    for(const frame of frames)frame.close();
+    if(decoder.state!=='closed')decoder.close();
+  }
 }
