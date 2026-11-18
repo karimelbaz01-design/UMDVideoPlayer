@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy bounded UMD MPEG-PS stream probe
+# Redeploy UMD MPEG-PS probe with Safari cache bust
 on:
   push:
     branches: [main]
