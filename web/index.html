@@ -16,7 +16,7 @@ section[hidden]{display:none}video{width:100%;max-height:65dvh;background:black;
 </style>
 </head>
 <body>
-<header><div><div class="brand">FRAME</div><div class="sub">YOUR MEDIA. YOUR SPACE.</div></div><small>WEB PREVIEW · UMD v6</small></header>
+<header><div><div class="brand">FRAME</div><div class="sub">YOUR MEDIA. YOUR SPACE.</div></div><small>WEB PREVIEW · UMD v7</small></header>
 <main>
 <section id="home"><div class="hero"><div class="sub">ENTERTAINMENT, REIMAGINED</div><h1>Un solo universo.<br>PLAY & WATCH.</h1><p>La versione Web di FRAME mantiene la stessa identità. Alcuni motori nativi richiedono ancora integrazioni dedicate.</p><div class="row"><button class="primary" data-go="play">PLAY</button><button data-go="watch">WATCH</button></div></div><div class="panel">🎮 Joystick Bluetooth: usa L/R per cambiare sezione, croce direzionale per spostare il focus e ✕ per selezionare, se il browser espone il controller.</div></section>
 <section id="play" hidden><div class="sub">GAMING</div><h1>PLAY</h1><div class="hero"><h2>PSP GAMES</h2><p>Importa e organizza ISO/CSO. Il motore PSP non è disponibile in questa anteprima Web: i giochi non si avviano ancora.</p><button id="pickGames">IMPORTA ISO / CSO</button><input id="games" type="file" accept=".iso,.cso" multiple hidden></div><h2>TEST ISO / UMD</h2><div class="panel"><p>Analizza direttamente da Safari una ISO PSP o UMD Video: legge la struttura del disco senza caricare il file su server.</p><button id="inspectImage" class="primary" type="button">SCEGLI UMD / ISO DA FILE</button><input id="inspectFile" type="file" style="display:block;width:100%;max-width:100%;margin:12px 0" aria-label="Seleziona immagine UMD ISO CSO o ZSO da File"><small>Su iPhone usa Sfoglia → Sul mio iPhone / iCloud Drive. Sono selezionabili anche file con estensione non riconosciuta; il formato viene verificato dopo la scelta.</small><pre id="discReport" style="white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted)" aria-live="polite">Nessuna immagine analizzata.</pre></div><h2>LA TUA RACCOLTA</h2><div id="gameList" class="panel"></div><small>I file restano sul dispositivo: questa anteprima memorizza solo i nomi dei giochi.</small></section>
@@ -28,5 +28,5 @@ section[hidden]{display:none}video{width:100%;max-height:65dvh;background:black;
 <p id="notice" role="status" aria-live="polite"></p>
 </main>
 <nav aria-label="Sezioni FRAME"><button data-go="home" aria-current="page">HOME</button><button data-go="play">PLAY</button><button data-go="watch">WATCH</button><button data-go="iptv">IPTV</button><button data-go="web">WEB</button><button data-go="library">LIBRARY</button><button data-go="settings">SETTINGS</button></nav>
-<script src="./app.js?v=umd-inspector-6-20261118" defer></script>
+<script src="./app.js?v=umd-inspector-7-20261118" defer></script>
 </body></html>
