@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v22 · PMF stream probe';
+const FRAME_INSPECTOR_VERSION='UMD v23 · PMF PES extraction';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -201,6 +201,43 @@ isoPicker.onchange=async e=>{
             streamLine.textContent='Diagnostica PSMF: header 2048 byte; dati dopo header '+data.length+' byte. Start code rilevati: pack='+counts.pack+', system='+counts.system+', video='+counts.video+', private='+counts.private+', audio='+counts.audio+', altri='+counts.other+'. Esempi: '+sampleIds.join(', ')+'. Conteggio preliminare: non prova la presenza di frame decodificabili.';
             panel.appendChild(streamLine);
             umdDetails.push(streamLine.textContent);
+            const videoChunks=[];let payloadBytes=0,skipped=0;
+            for(let pos=0;pos+14<=data.length;pos+=2048){
+              const sector=data.subarray(pos,Math.min(pos+2048,data.length));
+              let p=-1;
+              for(let k=0;k+9<sector.length;k++){
+                if(sector[k]===0&&sector[k+1]===0&&sector[k+2]===1&&sector[k+3]>=0xe0&&sector[k+3]<=0xef){p=k;break;}
+              }
+              if(p<0){skipped++;continue;}
+              const packetLen=(sector[p+4]<<8)|sector[p+5];
+              const payloadStart=p+9+sector[p+8];
+              const end=packetLen?Math.min(sector.length,p+6+packetLen):sector.length;
+              if((sector[p+6]&0xc0)!==0x80||payloadStart>=end){skipped++;continue;}
+              const chunk=sector.slice(payloadStart,end);
+              videoChunks.push(chunk);payloadBytes+=chunk.length;
+            }
+            const elementary=new Uint8Array(payloadBytes);let write=0;
+            for(const chunk of videoChunks){elementary.set(chunk,write);write+=chunk.length;}
+            const nals={};let first=-1;
+            for(let k=0;k+4<elementary.length;k++){
+              if(elementary[k]===0&&elementary[k+1]===0&&((elementary[k+2]===1)||(elementary[k+2]===0&&elementary[k+3]===1))){
+                const len=elementary[k+2]===1?3:4;
+                const type=elementary[k+len]&31;
+                if(type>=1&&type<=12){nals[type]=(nals[type]||0)+1;if(first<0)first=k;}
+                k+=len;
+              }
+            }
+            const diagnostic=document.createElement('p');diagnostic.style.cssText='font-size:13px;line-height:1.5;overflow-wrap:anywhere';
+            diagnostic.textContent='Estrazione video PMF sperimentale: settori PES video='+videoChunks.length+', settori ignorati='+skipped+', payload='+payloadBytes+' byte; firme NAL Annex-B='+JSON.stringify(nals)+'. Questo test non conferma la decodifica.';
+            panel.appendChild(diagnostic);umdDetails.push(diagnostic.textContent);
+            if(payloadBytes&&((nals[7]||0)>0||(nals[5]||0)>0)){
+              const blob=new Blob([elementary],{type:'application/octet-stream'});
+              const href=URL.createObjectURL(blob);
+              const a=document.createElement('a');a.href=href;a.download='ICON1-video-esperimento.h264';
+              a.textContent='Esporta flusso H.264 sperimentale';a.style.cssText='display:block;margin:10px 0;color:#c5a5ff;text-decoration:underline';
+              panel.appendChild(a);
+            }
+
           }
           umdDetails.push('ICON1.PMF: '+pmf.size+' byte; firma '+JSON.stringify(signature)+'; '+(signature==='PSMF'?'header PSMF rilevato':'header PSMF non rilevato')+'; nessun frame decodificato.');
         }else{line.textContent='ICON1.PMF: intervallo non valido o file troppo grande per la diagnostica.';}
