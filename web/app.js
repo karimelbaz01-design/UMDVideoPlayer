@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v58 · AVC WebCodecs compatibility test';
+const FRAME_INSPECTOR_VERSION='UMD v59 · native Safari MP4 test';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -521,6 +521,24 @@ isoPicker.onchange=async e=>{
               }catch(err){frameReport.textContent='Test PES non riuscito: '+err.message;}
               finally{frameButton.disabled=false;}
             };
+            const nativeButton=document.createElement('button');
+            nativeButton.type='button';
+            nativeButton.textContent='▶ TEST LETTORE NATIVO SAFARI (MP4)';
+            nativeButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
+            const nativeVideo=document.createElement('video');
+            nativeVideo.controls=true;nativeVideo.playsInline=true;
+            nativeVideo.style.cssText='display:none;width:100%;max-width:520px;margin-top:10px;background:black';
+            let nativeUrl=null;
+            nativeButton.onclick=()=>{
+              if(!frameCandidate)return;
+              try{
+                if(nativeUrl)URL.revokeObjectURL(nativeUrl);
+                nativeUrl=URL.createObjectURL(frameNativeMp4(frameCandidate));
+                nativeVideo.src=nativeUrl;nativeVideo.style.display='block';
+                frameReport.textContent='Test nativo MP4 senza ricodifica e senza audio: premi Play. Timestamp di composizione ancora sperimentali.';
+                nativeVideo.load();
+              }catch(e){frameReport.textContent='Test nativo non riuscito: '+e.message;}
+            };
             const nalCompareButton=document.createElement('button');
             nalCompareButton.type='button';
             nalCompareButton.textContent='CONFRONTA FLUSSO SENZA AUD';
@@ -550,7 +568,7 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
               try{
                 const sections=16,windowBytes=2097152;
@@ -702,14 +720,14 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
+                  frameButton.style.display='block';nativeButton.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
@@ -939,6 +957,80 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
 // Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
 // with Annex-B access units grouped at AUD boundaries (NAL type 9).
 // No upload or remote conversion; unsupported Safari versions show an error.
+// Experimental native MP4 path: wrap the original AVC access units in an
+// ISO BMFF file without re-encoding. Safari's HTMLVideoElement then owns decode.
+function frameNativeMp4(data){
+  const bytes=(...v)=>new Uint8Array(v);
+  const u16=n=>bytes((n>>>8)&255,n&255);
+  const u32=n=>bytes((n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255);
+  const ascii=s=>Uint8Array.from(s,c=>c.charCodeAt(0));
+  const join=(...parts)=>{const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let p=0;for(const a of parts){out.set(a,p);p+=a.length;}return out;};
+  const box=(name,...parts)=>{const payload=join(...parts);return join(u32(payload.length+8),ascii(name),payload);};
+  const full=(name,version,flags,...parts)=>box(name,bytes(version,(flags>>16)&255,(flags>>8)&255,flags&255),...parts);
+  const nals=[];
+  for(let p=0;p+5<data.length;){
+    if(data[p]!==0||data[p+1]!==0){p++;continue;}
+    const len=data[p+2]===1?3:(data[p+2]===0&&data[p+3]===1?4:0);
+    if(!len){p++;continue;}
+    nals.push({at:p,header:p+len,type:data[p+len]&31});p+=len+1;
+  }
+  const aud=nals.filter(n=>n.type===9);
+  if(aud.length<4)throw Error('Campione senza delimitatori H264 sufficienti');
+  const sps=nals.find(n=>n.type===7),pps=nals.find(n=>n.type===8);
+  if(!sps||!pps)throw Error('SPS/PPS non presenti nel campione');
+  const payload=n=>{
+    const next=nals.find(x=>x.at>n.at);
+    let end=next?next.at:data.length;
+    while(end>n.header+1&&data[end-1]===0)end--;
+    return data.subarray(n.header,end);
+  };
+  const spsData=payload(sps),ppsData=payload(pps);
+  const avcc=box('avcC',bytes(1,spsData[1],spsData[2],spsData[3],255,225),u16(spsData.length),spsData,bytes(1),u16(ppsData.length),ppsData);
+  const units=[];
+  let cursor=0;
+  for(let j=0;j<aud.length-1;j++){
+    const begin=aud[j].at,end=aud[j+1].at;
+    while(cursor<nals.length&&nals[cursor].at<begin)cursor++;
+    const members=[];
+    while(cursor<nals.length&&nals[cursor].at<end)members.push(nals[cursor++]);
+    const slices=members.filter(n=>n.type===1||n.type===5);
+    if(!slices.length)continue;
+    const parts=members.filter(n=>n.type!==9&&n.type!==7&&n.type!==8&&n.type!==12).map(payload);
+    units.push({parts,key:slices.some(n=>n.type===5)});
+  }
+  const key=units.findIndex(u=>u.key);
+  if(key<0)throw Error('Nessun fotogramma IDR nel campione');
+  const samples=units.slice(key,key+90);
+  if(samples.length<5)throw Error('Campione troppo corto');
+  const sampleBytes=samples.map(u=>join(...u.parts.map(p=>join(u32(p.length),p))));
+  const sizes=sampleBytes.map(b=>b.length);
+  const ftyp=box('ftyp',ascii('isom'),u32(512),ascii('isom'),ascii('iso2'),ascii('avc1'),ascii('mp41'));
+  const mdat=box('mdat',...sampleBytes);
+  const timescale=30000,duration=samples.length*1001,width=720,height=480;
+  const matrix=join(u32(65536),u32(0),u32(0),u32(0),u32(65536),u32(0),u32(0),u32(0),u32(1073741824));
+  const mvhd=full('mvhd',0,0,u32(0),u32(0),u32(timescale),u32(duration),u32(65536),u16(256),u16(0),new Uint8Array(8),matrix,new Uint8Array(24),u32(2));
+  const tkhd=full('tkhd',0,7,u32(0),u32(0),u32(1),u32(0),u32(duration),new Uint8Array(8),u16(0),u16(0),u16(0),u16(0),matrix,u32(width*65536),u32(height*65536));
+  const mdhd=full('mdhd',0,0,u32(0),u32(0),u32(timescale),u32(duration),u16(0x55c4),u16(0));
+  const hdlr=full('hdlr',0,0,u32(0),ascii('vide'),new Uint8Array(12),ascii('VideoHandler'),bytes(0));
+  const vmhd=full('vmhd',0,1,u16(0),u16(0),u16(0),u16(0));
+  const dinf=box('dinf',full('dref',0,0,u32(1),full('url ',0,1)));
+  const compressor=new Uint8Array(32);
+  const avc1=box('avc1',new Uint8Array(6),u16(1),new Uint8Array(16),u16(width),u16(height),u32(0x00480000),u32(0x00480000),u32(0),u16(1),compressor,u16(24),u16(0xffff),avcc);
+  const stsd=full('stsd',0,0,u32(1),avc1);
+  const stts=full('stts',0,0,u32(1),u32(samples.length),u32(1001));
+  const stsc=full('stsc',0,0,u32(1),u32(1),u32(samples.length),u32(1));
+  const stsz=full('stsz',0,0,u32(0),u32(samples.length),...sizes.map(u32));
+  const stco=full('stco',0,0,u32(1),u32(ftyp.length+8));
+  const stss=full('stss',0,0,u32(samples.filter(u=>u.key).length),...samples.flatMap((u,i)=>u.key?[u32(i+1)]:[]));
+  // Presentation timestamps for B pictures are not yet proven from PTS;
+  // native decoder trial deliberately keeps composition offsets zero.
+  const stbl=box('stbl',stsd,stts,stsc,stsz,stco,stss);
+  const minf=box('minf',vmhd,dinf,stbl);
+  const mdia=box('mdia',mdhd,hdlr,minf);
+  const trak=box('trak',tkhd,mdia);
+  const moov=box('moov',mvhd,trak);
+  return new Blob([ftyp,mdat,moov],{type:'video/mp4'});
+}
 async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original'){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs non disponibile in questo browser.');
