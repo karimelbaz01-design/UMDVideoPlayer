@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v28 · movie video decoder probe';
+const FRAME_INSPECTOR_VERSION='UMD v29 · movie keyframe validation';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -433,7 +433,21 @@ isoPicker.onchange=async e=>{
               movieButton.disabled=true;
               movieCanvas.style.display='block';
               movieStatus.textContent='Verifica decoder H.264 sul campione del film…';
-              try{await framePreviewH264(joined,movieCanvas,movieStatus);}
+              try{
+                const startCodes=[];
+                for(let i=0;i+4<joined.length;i++){
+                  if(joined[i]!==0||joined[i+1]!==0)continue;
+                  const prefix=joined[i+2]===1?3:(joined[i+2]===0&&joined[i+3]===1?4:0);
+                  if(prefix&&i+prefix<joined.length){startCodes.push({at:i,type:joined[i+prefix]&31});i+=prefix-1;}
+                }
+                const counts={};
+                for(const n of startCodes)counts[n.type]=(counts[n.type]||0)+1;
+                if(!counts[7]||!counts[8]||!counts[5])
+                  throw Error('Campione privo di sequenza completa SPS/PPS/IDR (SPS '+(counts[7]||0)+', PPS '+(counts[8]||0)+', IDR '+(counts[5]||0)+'). Serve cercare un punto di avvio nel film, non forzare il decoder.');
+                if(!counts[9])throw Error('Nel campione manca AUD: il decoder attuale non sa separare correttamente i fotogrammi del film.');
+                await framePreviewH264(joined,movieCanvas,movieStatus);
+                movieStatus.textContent='TEST FILM (00001.MPS): '+movieStatus.textContent+' Attenzione: fotogrammi decodificati non equivalgono a video visivamente corretto.';
+              }
               catch(err){movieStatus.textContent='Campione non decodificabile: '+err.message+'. È necessario un demux/lettore completo.';}
               finally{movieButton.disabled=false;}
             };
