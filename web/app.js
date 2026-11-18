@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v11 · Annex-B assembly';
+const FRAME_INSPECTOR_VERSION='UMD v12 · NAL quality and SPS';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -197,7 +197,7 @@ isoPicker.onchange=async e=>{
               if((sample[pos+6]&0xc0)!==0x80||dataStart>packetEnd){pos+=4;continue;}
               const end=Math.min(packetEnd,sample.length);
               const bytes=Math.max(0,end-dataStart);
-              if(id>=0xe0){demux.videoBytes+=bytes;if(bytes&&videoChunks.length<24)videoChunks.push(sample.subarray(dataStart,Math.min(end,dataStart+8192)));}
+              if(id>=0xe0){demux.videoBytes+=bytes;if(bytes)videoChunks.push(sample.subarray(dataStart,end));}
               else if(id===0xbd)demux.privateBytes+=bytes;
               else demux.audioBytes+=bytes;
               demux.packets++;
@@ -235,13 +235,31 @@ isoPicker.onchange=async e=>{
             }
             const units={complete:0,partial:starts.length?1:0,sps:0,pps:0,idr:0,sei:0,other:0,invalid:0,maxSize:0};
             const parameters=[];
+            const spsHeaders=[];
+            const seenSps=new Set();
+            let suspiciousShort=0, emulationMarkers=0;
             for(let j=0;j+1<starts.length;j++){
               const a=starts[j],b=starts[j+1],length=b.at-a.header;
               if(length<1){units.invalid++;continue;}
               const header=joined[a.header],type=header&31;
               if((header&128)!==0||type===0||type>23){units.invalid++;continue;}
               units.complete++;units.maxSize=Math.max(units.maxSize,length);
-              if(type===7){units.sps++;if(parameters.length<4)parameters.push('SPS '+length+' byte');}
+              if(length<4)suspiciousShort++;
+              for(let t=a.header+1;t+2<b.at;t++){
+                if(joined[t]===0&&joined[t+1]===0&&joined[t+2]===3){emulationMarkers++;t+=2;}
+              }
+              if(type===7){
+                units.sps++;
+                if(parameters.length<4)parameters.push('SPS '+length+' byte');
+                if(length>=4){
+                  const profile=joined[a.header+1],constraints=joined[a.header+2],level=joined[a.header+3];
+                  const signature=profile+':'+constraints+':'+level;
+                  if(!seenSps.has(signature)){
+                    seenSps.add(signature);
+                    spsHeaders.push('profile_idc='+profile+', flags='+constraints+', level_idc='+level);
+                  }
+                }
+              }
               else if(type===8){units.pps++;if(parameters.length<4)parameters.push('PPS '+length+' byte');}
               else if(type===5)units.idr++;
               else if(type===6)units.sei++;
@@ -250,6 +268,9 @@ isoPicker.onchange=async e=>{
             umdDetails.push('Annex-B ricostruito (campione): '+joinedSize+' byte di payload video concatenati da '+videoChunks.length+' PES; NAL complete='+units.complete+', ultima potenzialmente incompleta='+units.partial+', non valide='+units.invalid);
             umdDetails.push('NAL delimitate: SPS='+units.sps+', PPS='+units.pps+', IDR='+units.idr+', SEI='+units.sei+', altre='+units.other+'; massima='+units.maxSize+' byte');
             if(parameters.length)umdDetails.push('Parametri trovati: '+parameters.join('; ')+' (contenuto non ancora interpretato)');
+            umdDetails.push('Controllo qualità NAL: unità sotto 4 byte='+suspiciousShort+', marcatori emulation_prevention='+emulationMarkers);
+            umdDetails.push('SPS (header preliminare): '+(spsHeaders.length?spsHeaders.join(' | '):'nessun header SPS completo nel campione'));
+            umdDetails.push('Attenzione: le NAL sono delimitate sintatticamente, non ancora validate con un decoder H.264.');
             umdDetails.push('Verifica necessaria: le NAL possono attraversare PES non inclusi nel campione; nessun frame è ancora decodificato.');
 
 
