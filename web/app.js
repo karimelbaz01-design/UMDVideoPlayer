@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v44 · hardware preview visibility fix';
+const FRAME_INSPECTOR_VERSION='UMD v45 · validated IDR sample selection';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -476,6 +476,8 @@ isoPicker.onchange=async e=>{
               frameCandidate=sample?.data||null;
               frameReport.textContent=sample?'Punto selezionato: '+sample.percent+'% del file MPS, '+sample.data.length+' byte di video. Premi il test hardware per confrontare le immagini.':'';
               if(frameCanvas._framePlayback)frameCanvas._framePlayback.stop();
+              frameCanvas.parentElement.querySelector('[data-frame-movie-samples]')?.remove();
+              frameCanvas.getContext('2d').clearRect(0,0,frameCanvas.width,frameCanvas.height);
               frameCanvas.style.display='none';
               alternateButton.disabled=false;
               frameButton.disabled=false;
@@ -575,7 +577,18 @@ isoPicker.onchange=async e=>{
                       if(first>=0&&marks.slice(first,idr).some(x=>x.type===8)){
                         const cut=marks[first].at;
                         const candidate=elementary.slice(cut);
-                        if(candidate.length>1000)movieSamples.push({percent:Math.round(offset/Math.max(1,mps.size)*100),data:candidate});
+                        // The decoder requires a complete AUD-bounded IDR access unit.
+                        // A raw IDR signature by itself is insufficient.
+                        const boundaries=marks.filter(m=>m.at>=cut&&m.type===9);
+                        let valid=false;
+                        for(let t=0;t+1<boundaries.length;t++){
+                          const left=boundaries[t].at,right=boundaries[t+1].at;
+                          const members=marks.filter(m=>m.at>=left&&m.at<right);
+                          if(members.some(m=>m.type===5)&&marks.some(m=>m.type===7&&m.at<right)&&marks.some(m=>m.type===8&&m.at<right)){
+                            valid=true;break;
+                          }
+                        }
+                        if(valid&&candidate.length>1000)movieSamples.push({percent:Math.round(offset/Math.max(1,mps.size)*100),data:candidate});
                       }
                     }
                   }
