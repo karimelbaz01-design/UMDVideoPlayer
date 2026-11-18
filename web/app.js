@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v16 · H264 slice diagnostics';
+const FRAME_INSPECTOR_VERSION='UMD v17 · NAL type diagnostics';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -320,16 +320,27 @@ isoPicker.onchange=async e=>{
               if(hasPps&&type===5){exportEnd=starts.length-1;break;}
             }
             let vclCount=0,idrCount=0,invalidHeaders=0,shortNal=0,firstIdr=-1;
+            const shortTypes={},allTypes={},shortExamples=[];
+            let zeroLength=0,oneByte=0,twoBytes=0,threeBytes=0;
             for(let j=Math.max(0,exportStart);j+1<starts.length;j++){
               const start=starts[j],end=starts[j+1];
               const size=end.at-start.header,header=joined[start.header],type=header&31;
+              allTypes[type]=(allTypes[type]||0)+1;
               if((header&128)!==0||type===0||type>23)invalidHeaders++;
-              if(size<4)shortNal++;
+              if(size<4){
+                shortNal++;shortTypes[type]=(shortTypes[type]||0)+1;
+                if(size===0)zeroLength++;else if(size===1)oneByte++;else if(size===2)twoBytes++;else if(size===3)threeBytes++;
+                if(shortExamples.length<8)shortExamples.push('tipo '+type+' ('+size+' byte, offset '+start.at+')');
+              }
               if(type===1||type===5)vclCount++;
               if(type===5){idrCount++;if(firstIdr<0)firstIdr=j;}
             }
+            const formatTypes=(counts)=>Object.keys(counts).sort((a,b)=>Number(a)-Number(b)).map(t=>t+':'+counts[t]).join(', ')||'nessuno';
             umdDetails.push('Diagnostica campione esportabile: VCL (slice)='+vclCount+', IDR='+idrCount+', NAL sotto 4 byte='+shortNal+', header non validi='+invalidHeaders);
-            umdDetails.push('Nota: le slice VCL non equivalgono necessariamente ai fotogrammi; l\'esportazione non prova che il film sia riproducibile.');
+            umdDetails.push('Tipi NAL totali: '+formatTypes(allTypes));
+            umdDetails.push('NAL corte per tipo: '+formatTypes(shortTypes)+'; dimensioni 0/1/2/3 byte='+[zeroLength,oneByte,twoBytes,threeBytes].join('/'));
+            if(shortExamples.length)umdDetails.push('Esempi NAL corte: '+shortExamples.join('; '));
+            umdDetails.push('Diagnostica: i confini Annex-B sono provvisori; occorre validare slice header e continuità PES prima di attribuire i dati a frame reali.');
             if(exportStart>=0&&exportEnd>exportStart){
               const first=starts[exportStart].at,last=starts[exportEnd].at;
               const raw=joined.slice(first,last);
