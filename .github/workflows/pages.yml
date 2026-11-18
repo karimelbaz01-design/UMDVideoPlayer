@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v17 NAL breakdown
+# Deploy FRAME UMD v18 disc catalog
 on:
   push:
     branches: [main]
