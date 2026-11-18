@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Publish UMD STREAM CLIPINF playlist inspection
+# Refresh Safari cache for UMD STREAM CLIPINF inspection
 on:
   push:
     branches: [main]
