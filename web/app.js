@@ -130,7 +130,7 @@ isoPicker.onchange=async e=>{
         umdDetails.push(folder+': '+files.length+' file');
         umdDetails.push(...files.slice(0,12).map(r=>'  '+r.name+' — '+(r.size/1048576).toFixed(2)+' MiB'));
         if(folder==='STREAM'){
-          const mps=files.filter(r=>/\\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size)[0];
+          const mps=files.filter(r=>/\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size)[0];
           if(mps){
             const start=mps.extent*2048;
             const available=Math.max(0,file.size-start);
