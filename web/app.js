@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v37 · hardware decoder comparison';
+const FRAME_INSPECTOR_VERSION='UMD v38 · longer frame sample';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -845,7 +845,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   params.set(prefix);params.set(data.subarray(pps.at,ppsEnd),prefix.length);
   let decoded=0,decoderError=null;
   const retained=new Map();
-  const sampleIndices=new Set([0,14,29,44]);
+  const sampleIndices=new Set([0,29,59,89]);
   const decoder=new VideoDecoder({
     output(frame){
       const index=decoded++;
@@ -856,7 +856,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   });
   try{
     decoder.configure(config);
-    const selected=units.slice(firstKey,firstKey+45);
+    const selected=units.slice(firstKey,firstKey+90);
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
       const unit=selected[i];
@@ -890,6 +890,37 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       cell.append(thumbnail,caption);grid.appendChild(cell);
     }
     canvas.insertAdjacentElement('afterend',grid);
+    // Replay decoded images from a bounded memory cache; playback is silent.
+    // Close old frame objects when replacing a test to avoid iOS memory pressure.
+    const prior=canvas._framePlayback;
+    if(prior){prior.stop();canvas._framePlayback=null;}
+    const controls=document.createElement('div');
+    controls.style.cssText='display:flex;gap:8px;margin:8px 0';
+    const play=document.createElement('button');
+    play.type='button';play.textContent='▶ ANIMA FOTOGRAMMI';
+    play.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:#30263f;color:white';
+    const stop=document.createElement('button');
+    stop.type='button';stop.textContent='■ FERMA';
+    stop.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:transparent;color:white';
+    const playbackNote=document.createElement('p');
+    playbackNote.style.cssText='font-size:12px;color:#c6bccc';
+    playbackNote.textContent='Animazione sperimentale dei fotogrammi campionati, senza audio.';
+    controls.append(play,stop);
+    grid.insertAdjacentElement('afterend',controls);
+    controls.insertAdjacentElement('afterend',playbackNote);
+    let timer=null,position=0;
+    const thumbnails=Array.from(grid.querySelectorAll('canvas'));
+    const draw=()=>{
+      const image=thumbnails[position%thumbnails.length];
+      if(image)canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+      position++;
+      if(position>=thumbnails.length)halt();
+    };
+    const halt=()=>{if(timer!==null){clearInterval(timer);timer=null;}play.disabled=false;};
+    const previousStop=canvas._framePlayback?.stop;
+    canvas._framePlayback={stop:()=>{halt();controls.remove();playbackNote.remove();}};
+    play.onclick=()=>{halt();position=0;play.disabled=true;draw();if(position<thumbnails.length)timer=setInterval(draw,500);};
+    stop.onclick=halt;
     status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Le righe verdi sono artefatti; confronta anche il decoder alternativo.';
   }finally{
     for(const frame of retained.values())frame.close();
