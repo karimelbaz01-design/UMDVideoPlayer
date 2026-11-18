@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v63 · interlaced field-pair MP4 mux';
+const FRAME_INSPECTOR_VERSION='UMD v64 · no fabricated composition offsets';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -1052,32 +1052,11 @@ function frameNativeMp4(data){
   const stsz=full('stsz',0,0,u32(0),u32(samples.length),...sizes.map(u32));
   const stco=full('stco',0,0,u32(1),u32(ftyp.length+8));
   const stss=full('stss',0,0,u32(samples.filter(u=>u.key).length),...samples.flatMap((u,i)=>u.key?[u32(i+1)]:[]));
-  // Reorder B pictures for composition offsets. Keep decode order in mdat.
-  // Version 1 ctts allows signed offsets, unlike the v59 zero-offset file.
-  const presentation=[0];let delayed=null;
-  for(let k=1;k<samples.length;k++){
-    const isB=(()=>{
-      const nal=samples[k].parts.find(p=>(p[0]&31)===1||(p[0]&31)===5);
-      if(!nal)return false;
-      const rb=[];let zeros=0;
-      for(let q=1;q<nal.length&&rb.length<20;q++){
-        const b=nal[q];if(zeros>=2&&b===3){zeros=0;continue;}
-        rb.push(b);zeros=b===0?zeros+1:0;
-      }
-      let bit=0;
-      const read=()=>{if(bit>=rb.length*8)throw Error('slice EOF');return(rb[bit>>3]>>(7-(bit++&7)))&1;};
-      const ue=()=>{let z=0;while(!read()){if(++z>20)throw Error('UE overflow');}let v=1;while(z--)v=v*2+read();return v-1;};
-      try{ue();return ue()%5===1;}catch{return false;}
-    })();
-    if(isB)presentation.push(k);
-    else{if(delayed!==null)presentation.push(delayed);delayed=k;}
-  }
-  if(delayed!==null)presentation.push(delayed);
-  const ranks=new Array(samples.length);
-  presentation.forEach((idx,rank)=>{ranks[idx]=rank;});
-  const offsets=ranks.map((rank,i)=>(rank-i)*1001);
-  const ctts=full('ctts',1,0,u32(offsets.length),...offsets.flatMap(v=>[u32(1),u32(v)]));
-  const stbl=box('stbl',stsd,stts,ctts,stsc,stsz,stco,stss);
+  // v64 diagnostic: do not invent composition offsets from a partial
+  // slice-type heuristic. It generated negative PTS and non-monotonic
+  // timestamps. Decode-order-only MP4 establishes whether Safari can
+  // open a structurally simple native sample before adding true POC/PTS.
+  const stbl=box('stbl',stsd,stts,stsc,stsz,stco,stss);
   const minf=box('minf',vmhd,dinf,stbl);
   const mdia=box('mdia',mdhd,hdlr,minf);
   const trak=box('trak',tkhd,mdia);
@@ -1086,7 +1065,7 @@ function frameNativeMp4(data){
   // v60 placed moov at the end; exporting this result permits ffprobe validation.
   const chunkOffset=ftyp.length+moov.length+8;
   const stcoFinal=full('stco',0,0,u32(1),u32(chunkOffset));
-  const stblFinal=box('stbl',stsd,stts,ctts,stsc,stsz,stcoFinal,stss);
+  const stblFinal=box('stbl',stsd,stts,stsc,stsz,stcoFinal,stss);
   const moovFinal=box('moov',mvhd,box('trak',tkhd,box('mdia',mdhd,hdlr,box('minf',vmhd,dinf,stblFinal))));
   return new Blob([ftyp,moovFinal,mdat],{type:'video/mp4'});
 }
