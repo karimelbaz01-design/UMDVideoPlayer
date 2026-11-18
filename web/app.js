@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v18 · disc catalog';
+const FRAME_INSPECTOR_VERSION='UMD v19 · cover preview';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -126,6 +126,22 @@ isoPicker.onchange=async e=>{
       const presentation=['ICON0.PNG','ICON1.PMF','PIC0.PNG','PIC1.PNG','SND0.AT3'];
       const presentationFiles=contents.filter(r=>!r.directory&&presentation.includes(r.name.toUpperCase()));
       umdDetails.push('Presentazione/copertina: '+(presentationFiles.length?presentationFiles.map(r=>r.name+' ('+r.size+' byte)').join(', '):'nessuna risorsa standard nella cartella UMD_VIDEO'));
+      const cover=contents.find(r=>!r.directory&&r.name.toUpperCase()==='ICON0.PNG');
+      const oldCover=document.getElementById('frame-umd-cover');
+      if(oldCover){if(oldCover.dataset.objectUrl)URL.revokeObjectURL(oldCover.dataset.objectUrl);oldCover.remove();}
+      if(cover&&cover.size>0&&cover.size<=8*1024*1024&&cover.extent*2048+cover.size<=file.size){
+        const signature=new Uint8Array(await file.slice(cover.extent*2048,cover.extent*2048+8).arrayBuffer());
+        if([137,80,78,71,13,10,26,10].every((b,i)=>signature[i]===b)){
+          const blob=file.slice(cover.extent*2048,cover.extent*2048+cover.size,'image/png');
+          const url=URL.createObjectURL(blob);
+          const img=document.createElement('img');
+          img.id='frame-umd-cover';img.dataset.objectUrl=url;img.alt='Immagine originale ICON0.PNG dal disco UMD';
+          img.style.cssText='display:block;max-width:min(100%,320px);max-height:240px;object-fit:contain;margin:14px auto;border-radius:12px';
+          img.onerror=()=>{URL.revokeObjectURL(url);img.remove();};
+          isoReport.insertAdjacentElement('beforebegin',img);
+          umdDetails.push('Copertina: ICON0.PNG estratta localmente e mostrata sopra il rapporto.');
+        }else umdDetails.push('ICON0.PNG: firma PNG non valida, anteprima omessa.');
+      }
       umdDetails.push('Menu, film principale ed extra: NON classificati; richiedono interpretazione di PLAYLIST.UMD, CLIPINF e collegamenti tra stream.');
       const resources=contents.find(r=>r.directory&&r.name.toUpperCase()==='RESOURCE');
       if(resources){
