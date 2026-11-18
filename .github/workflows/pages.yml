@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy UMD v7 runtime diagnostics
+# Deploy UMD v8 MPS detection fix
 on:
   push:
     branches: [main]
