@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v17 · NAL type diagnostics';
+const FRAME_INSPECTOR_VERSION='UMD v18 · disc catalog';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -122,6 +122,16 @@ isoPicker.onchange=async e=>{
     let umdDetails=['Analizzatore: '+FRAME_INSPECTOR_VERSION];
     if(umd&&selected){
       const contents=await inspectIsoDirectory(file,selected.extent,selected.size);
+      umdDetails.push('CATALOGO UMD (identificazione preliminare):');
+      const presentation=['ICON0.PNG','ICON1.PMF','PIC0.PNG','PIC1.PNG','SND0.AT3'];
+      const presentationFiles=contents.filter(r=>!r.directory&&presentation.includes(r.name.toUpperCase()));
+      umdDetails.push('Presentazione/copertina: '+(presentationFiles.length?presentationFiles.map(r=>r.name+' ('+r.size+' byte)').join(', '):'nessuna risorsa standard nella cartella UMD_VIDEO'));
+      umdDetails.push('Menu, film principale ed extra: NON classificati; richiedono interpretazione di PLAYLIST.UMD, CLIPINF e collegamenti tra stream.');
+      const resources=contents.find(r=>r.directory&&r.name.toUpperCase()==='RESOURCE');
+      if(resources){
+        const entries=await inspectIsoDirectory(file,resources.extent,resources.size);
+        umdDetails.push('RESOURCE: '+entries.length+' elementi; '+entries.slice(0,8).map(r=>r.name).join(', '));
+      }
       for(const folder of ['STREAM','CLIPINF']){
         const rec=contents.find(r=>r.directory&&r.name.toUpperCase()===folder);
         if(!rec)continue;
