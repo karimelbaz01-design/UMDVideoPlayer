@@ -131,8 +131,13 @@ isoPicker.onchange=async e=>{
         umdDetails.push(...files.slice(0,12).map(r=>'  '+r.name+' — '+(r.size/1048576).toFixed(2)+' MiB'));
         if(folder==='STREAM'){
           const mps=files.filter(r=>/\\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size)[0];
-          if(mps&&mps.extent*2048+mps.size<=file.size){
-            const sample=new Uint8Array(await file.slice(mps.extent*2048,mps.extent*2048+Math.min(mps.size,262144)).arrayBuffer());
+          if(mps){
+            const start=mps.extent*2048;
+            const available=Math.max(0,file.size-start);
+            umdDetails.push('MPS selezionato: '+mps.name+'; offset='+start+'; dimensione dichiarata='+mps.size+'; byte disponibili='+available);
+            if(available===0){umdDetails.push('MPEG-PS: impossibile leggere il campione: offset fuori dal file ISO.');}
+            else {
+            const sample=new Uint8Array(await file.slice(start,start+Math.min(mps.size,available,262144)).arrayBuffer());
             const counts={pack:0,system:0,video:0,private1:0,audio:0,other:0};
             for(let i=0;i+4<sample.length;i++){
               if(sample[i]!==0||sample[i+1]!==0||sample[i+2]!==1)continue;
@@ -148,7 +153,8 @@ isoPicker.onchange=async e=>{
             umdDetails.push('Analisi campione '+mps.name+' ('+sample.length+' byte):');
             umdDetails.push('Start code MPEG-PS: pack='+counts.pack+', system='+counts.system+', video='+counts.video+', private_stream_1='+counts.private1+', audio='+counts.audio);
             umdDetails.push('Nota: conteggio preliminare delle firme, non verifica dei pacchetti né decodifica.');
-          }
+            }
+          }else{umdDetails.push('MPEG-PS: nessun file .MPS riconosciuto nella cartella STREAM.');}
         }
         if(files.length>12)umdDetails.push('  … e altri '+(files.length-12)+' file');
       }
