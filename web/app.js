@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v36 · four movie frame samples';
+const FRAME_INSPECTOR_VERSION='UMD v37 · hardware decoder comparison';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -478,9 +478,23 @@ isoPicker.onchange=async e=>{
               }catch(err){frameReport.textContent='Test PES non riuscito: '+err.message;}
               finally{frameButton.disabled=false;}
             };
+            const alternateButton=document.createElement('button');
+            alternateButton.type='button';
+            alternateButton.textContent='CONFRONTA DECODER HARDWARE';
+            alternateButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #8d79aa;border-radius:10px;background:transparent;color:#eee;font-weight:700;max-width:100%';
+            alternateButton.onclick=async()=>{
+              if(!frameCandidate)return;
+              alternateButton.disabled=true;
+              frameReport.textContent='Prova del percorso hardware WebCodecs…';
+              try{
+                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-hardware');
+                frameReport.textContent+=' Il browser può usare lo stesso decoder anche con questa preferenza; il confronto visivo non garantisce un percorso diverso.';
+              }catch(err){frameReport.textContent='Decoder hardware: '+err.message;}
+              finally{alternateButton.disabled=false;}
+            };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;frameButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;frameButton.style.display='none';alternateButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca in corso su 16 posizioni del file MPS…';
               try{
                 const sections=16,windowBytes=524288;
@@ -556,12 +570,12 @@ isoPicker.onchange=async e=>{
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
                 const candidates=rows.filter(r=>r.sps&&r.pps&&r.idr);
-                if(frameCandidate){frameButton.style.display='block';frameReport.textContent='Campione PES disponibile: '+frameCandidate.length+' byte. Il test è sperimentale e può mostrare artefatti.';}
+                if(frameCandidate){frameButton.style.display='block';alternateButton.style.display='block';frameReport.textContent='Campione PES disponibile: '+frameCandidate.length+' byte. Il test è sperimentale e può mostrare artefatti.';}
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,frameButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,frameButton,alternateButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
@@ -791,7 +805,7 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
 // Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
 // with Annex-B access units grouped at AUD boundaries (NAL type 9).
 // No upload or remote conversion; unsupported Safari versions show an error.
-async function frameDecodeMovieAccessUnits(data,canvas,status){
+async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software'){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs non disponibile in questo browser.');
   const nals=[];
@@ -822,7 +836,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status){
   if(!sps||!pps||sps.header+3>=data.length)
     throw Error('Parametri SPS/PPS mancanti prima del primo fotogramma IDR.');
   const codec='avc1.'+Array.from(data.subarray(sps.header+1,sps.header+4),b=>b.toString(16).padStart(2,'0')).join('');
-  const config={codec,hardwareAcceleration:'prefer-software',optimizeForLatency:true,avc:{format:'annexb'}};
+  const config={codec,hardwareAcceleration:acceleration,optimizeForLatency:true,avc:{format:'annexb'}};
   const supported=await VideoDecoder.isConfigSupported(config);
   if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
   const prefix=data.subarray(sps.at,pps.at);
@@ -876,7 +890,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status){
       cell.append(thumbnail,caption);grid.appendChild(cell);
     }
     canvas.insertAdjacentElement('afterend',grid);
-    status.textContent='PES: '+selected.length+' access unit, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Confronta le quattro immagini: righe verdi = artefatti, non video corretto.';
+    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Le righe verdi sono artefatti; confronta anche il decoder alternativo.';
   }finally{
     for(const frame of retained.values())frame.close();
     if(decoder.state!=='closed')decoder.close();
