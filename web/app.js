@@ -80,10 +80,13 @@ async function inspectSfo(file,record){
   }return result;
 }
 
-$('inspectImage').onclick=()=>$('inspectFile').click();
-$('inspectFile').onchange=async e=>{
-  const file=e.target.files[0];if(!file)return;
-  const out=$('discReport');out.textContent='Analisi in corso…';
+const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
+isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
+isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
+isoPicker.onchange=async e=>{
+  const file=e.target.files&&e.target.files[0];
+  if(!file){isoReport.textContent='Il browser non ha restituito alcun file. Prova a spostare la ISO in Sul mio iPhone → Download.';return;}
+  const out=isoReport;out.textContent='File selezionato: '+file.name+' ('+file.size+' byte).\\nAnalisi in corso…';
   try{
     const sector=2048, pvdOffset=16*sector;
     if(file.size<pvdOffset+sector)throw Error('Immagine troppo piccola per una ISO PSP.');
