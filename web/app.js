@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v15 · extended H264 sample';
+const FRAME_INSPECTOR_VERSION='UMD v16 · H264 slice diagnostics';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -319,6 +319,17 @@ isoPicker.onchange=async e=>{
               if(type===8)hasPps=true;
               if(hasPps&&type===5){exportEnd=starts.length-1;break;}
             }
+            let vclCount=0,idrCount=0,invalidHeaders=0,shortNal=0,firstIdr=-1;
+            for(let j=Math.max(0,exportStart);j+1<starts.length;j++){
+              const start=starts[j],end=starts[j+1];
+              const size=end.at-start.header,header=joined[start.header],type=header&31;
+              if((header&128)!==0||type===0||type>23)invalidHeaders++;
+              if(size<4)shortNal++;
+              if(type===1||type===5)vclCount++;
+              if(type===5){idrCount++;if(firstIdr<0)firstIdr=j;}
+            }
+            umdDetails.push('Diagnostica campione esportabile: VCL (slice)='+vclCount+', IDR='+idrCount+', NAL sotto 4 byte='+shortNal+', header non validi='+invalidHeaders);
+            umdDetails.push('Nota: le slice VCL non equivalgono necessariamente ai fotogrammi; l\'esportazione non prova che il film sia riproducibile.');
             if(exportStart>=0&&exportEnd>exportStart){
               const first=starts[exportStart].at,last=starts[exportEnd].at;
               const raw=joined.slice(first,last);
