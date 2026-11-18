@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v57 · H264 elementary stream validation';
+const FRAME_INSPECTOR_VERSION='UMD v58 · AVC WebCodecs compatibility test';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -1032,6 +1032,48 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   // UMD video may contain reordered B pictures (PTS != DTS).
   // Low-latency decoding can compromise frame reordering; disable it.
   const config={codec,hardwareAcceleration:acceleration,optimizeForLatency:false,avc:{format:'annexb'}};
+  // Convert Annex-B NAL units to length-prefixed AVC, with an explicit
+  // AVCDecoderConfigurationRecord. Safari's Annex-B WebCodecs path is
+  // producing corrupt pictures although FFmpeg decodes the same ES.
+  const rawNal=n=>{
+    const end=nals.find(x=>x.at>n.at)?.at??data.length;
+    let last=end;
+    while(last>n.header+1&&data[last-1]===0)last--;
+    return data.subarray(n.header,last);
+  };
+  const spsBytes=rawNal(sps),ppsBytes=rawNal(pps);
+  const avcc=new Uint8Array(11+spsBytes.length+ppsBytes.length);
+  let ac=0;
+  avcc[ac++]=1;avcc[ac++]=spsBytes[1];avcc[ac++]=spsBytes[2];avcc[ac++]=spsBytes[3];
+  avcc[ac++]=255;avcc[ac++]=225;
+  avcc[ac++]=(spsBytes.length>>8)&255;avcc[ac++]=spsBytes.length&255;
+  avcc.set(spsBytes,ac);ac+=spsBytes.length;
+  avcc[ac++]=1;avcc[ac++]=(ppsBytes.length>>8)&255;avcc[ac++]=ppsBytes.length&255;
+  avcc.set(ppsBytes,ac);
+  const avcConfig={codec,hardwareAcceleration:acceleration,optimizeForLatency:false,description:avcc};
+  const avcSupported=await VideoDecoder.isConfigSupported(avcConfig);
+  const useAvc=avcSupported.supported;
+  if(useAvc)Object.assign(config,avcConfig);
+  const toAvc=unit=>{
+    const parts=[];let total=0;
+    for(let k=0;k<unit.members.length;k++){
+      const n=unit.members[k];
+      if(n.type===9||n.type===7||n.type===8)continue;
+      const end=k+1<unit.members.length?unit.members[k+1].at:unit.end;
+      let last=end;while(last>n.header+1&&data[last-1]===0)last--;
+      const nal=data.subarray(n.header,last);
+      if(!nal.length)continue;
+      parts.push(nal);total+=4+nal.length;
+    }
+    const out=new Uint8Array(total);let pos=0;
+    for(const nal of parts){
+      const len=nal.length;
+      out[pos++]=(len>>>24)&255;out[pos++]=(len>>>16)&255;
+      out[pos++]=(len>>>8)&255;out[pos++]=len&255;
+      out.set(nal,pos);pos+=len;
+    }
+    return out;
+  };
   const supported=await VideoDecoder.isConfigSupported(config);
   if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
   const spsEnd=nals.find(n=>n.at>sps.at)?.at??pps.at;
@@ -1097,8 +1139,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
       const unit=selected[i];
-      let chunk=data.slice(unit.begin,unit.end);
-      if(nalMode==='no-aud'){
+      let chunk=useAvc?toAvc(unit):data.slice(unit.begin,unit.end);
+      if(!useAvc&&nalMode==='no-aud'){
         const parts=[];let size=0;
         for(let k=0;k<unit.members.length;k++){
           const n=unit.members[k];if(n.type===9)continue;
@@ -1108,7 +1150,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
         chunk=new Uint8Array(size);let at=0;
         for(const part of parts){chunk.set(part,at);at+=part.length;}
       }
-      if(i===0){
+      if(i===0&&!useAvc){
         const combined=new Uint8Array(params.length+chunk.length);
         combined.set(params);combined.set(chunk,params.length);chunk=combined;
       }
@@ -1216,7 +1258,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
