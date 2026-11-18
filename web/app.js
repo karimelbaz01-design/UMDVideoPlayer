@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v13 · SPS dimensions';
+const FRAME_INSPECTOR_VERSION='UMD v14 · H264 sample export';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -309,6 +309,37 @@ isoPicker.onchange=async e=>{
             umdDetails.push('SPS (header preliminare): '+(spsHeaders.length?spsHeaders.join(' | '):'nessun header SPS completo nel campione'));
             umdDetails.push('Risoluzione SPS decodificata (campione): '+(dimensions.length?dimensions.join(' | '):'non determinata; dati incompleti o non validi'));
             umdDetails.push('Attenzione: le NAL sono delimitate sintatticamente, non ancora validate con un decoder H.264.');
+
+            // A bounded, genuine Annex-B sample can be exported for external decoder testing.
+            // Retain complete NALs only and begin at the first SPS followed by PPS and IDR.
+            let exportStart=-1,exportEnd=-1,hasPps=false;
+            for(let j=0;j+1<starts.length;j++){
+              const type=joined[starts[j].header]&31;
+              if(exportStart<0){if(type===7)exportStart=j;continue;}
+              if(type===8)hasPps=true;
+              if(hasPps&&type===5){exportEnd=Math.min(starts.length-1,j+24);break;}
+            }
+            if(exportStart>=0&&exportEnd>exportStart){
+              const first=starts[exportStart].at,last=starts[exportEnd].at;
+              const raw=joined.slice(first,last);
+              if(raw.length>0&&raw.length<=1048576){
+                const old=window.__frameVideoSampleUrl;
+                if(old)URL.revokeObjectURL(old);
+                const url=URL.createObjectURL(new Blob([raw],{type:'application/octet-stream'}));
+                window.__frameVideoSampleUrl=url;
+                const link=document.getElementById('frame-h264-sample-link')||document.createElement('a');
+                link.id='frame-h264-sample-link';
+                link.textContent='SCARICA CAMPIONE H.264 (sperimentale)';
+                link.href=url;link.download='FRAME_UMD_video_sample.h264';
+                link.style.cssText='display:inline-block;margin-top:12px;padding:12px;border-radius:10px;background:#bba0f4;color:#15111e;font-weight:700;text-decoration:none;';
+                const outNode=document.getElementById('iso-report')||document.getElementById('isoReport');
+                if(outNode&&outNode.parentNode)outNode.parentNode.appendChild(link);
+                umdDetails.push('Campione H.264 esportabile: '+raw.length+' byte, da SPS a NAL dopo IDR; NON garantito decodificabile.');
+              }
+            }else{
+              umdDetails.push('Campione H.264: SPS/PPS/IDR non presenti in sequenza completa nel campione.');
+            }
+
             umdDetails.push('Verifica necessaria: le NAL possono attraversare PES non inclusi nel campione; nessun frame è ancora decodificato.');
 
 
