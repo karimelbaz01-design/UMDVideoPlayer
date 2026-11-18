@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v55 · original MPS sample export';
+const FRAME_INSPECTOR_VERSION='UMD v57 · H264 elementary stream validation';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -1005,6 +1005,18 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     try{ue();const type=ue()%5;return ['P','B','I','SP','SI'][type];}catch{return '?';}
   };
   for(const unit of units)unit.pictureType=sliceKind(unit);
+  // Validate the Annex-B elementary stream before handing it to WebCodecs.
+  // Corrupt NAL boundaries can silently produce green/ghosted decoded images.
+  const nalStats={forbidden:0,empty:0,missingStart:0,invalidRef:0};
+  for(let k=0;k<nals.length;k++){
+    const n=nals[k],end=k+1<nals.length?nals[k+1].at:data.length;
+    if(data[n.header]&128)nalStats.forbidden++;
+    if(end<=n.header+1)nalStats.empty++;
+    if(n.type===5&&((data[n.header]>>5)&3)===0)nalStats.invalidRef++;
+    if(data[n.at]!==0||data[n.at+1]!==0)nalStats.missingStart++;
+  }
+  if(nalStats.forbidden||nalStats.empty||nalStats.missingStart||nalStats.invalidRef)
+    throw Error('Flusso H264 non valido: '+JSON.stringify(nalStats));
   const firstKey=units.findIndex(u=>u.hasIDR);
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
   const first=units[firstKey];
@@ -1024,8 +1036,27 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
   const prefix=data.subarray(sps.at,pps.at);
   const ppsEnd=nals.find(n=>n.at>pps.at)?.at??first.begin;
+  // The SPS and PPS may be separated by other NAL units. Send only
+  // their exact byte ranges, with no intervening SEI/AUD/slices.
   const params=new Uint8Array(prefix.length+Math.max(0,ppsEnd-pps.at));
   params.set(prefix);params.set(data.subarray(pps.at,ppsEnd),prefix.length);
+  // Keep an untouched elementary-stream export for independent FFmpeg
+  // comparison with exactly the bytes sent to the browser decoder.
+  const debugExport=document.createElement('button');
+  debugExport.type='button';
+  debugExport.textContent='ESPORTA H264 DEMUX FRAME (diagnostica)';
+  debugExport.style.cssText='display:block;margin:8px 0;padding:10px;border:1px solid #8d79aa;border-radius:9px;background:transparent;color:#eee';
+  debugExport.onclick=()=>{
+    const blob=new Blob([data],{type:'application/octet-stream'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='FRAME_demux_7percent.h264';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  };
+  const priorExport=canvas.parentElement.querySelector('[data-frame-h264-export]');
+  if(priorExport)priorExport.remove();
+  debugExport.dataset.frameH264Export='true';
+  canvas.insertAdjacentElement('afterend',debugExport);
   let decoded=0,decoderError=null;
   // Retain downscaled canvases, not VideoFrame objects, to limit iPhone memory.
   const pictures=[];
