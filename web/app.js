@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v41 · RGBA color conversion probe';
+const FRAME_INSPECTOR_VERSION='UMD v42 · restore native rendering';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -849,30 +849,13 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   let decoded=0,decoderError=null;
   // Retain downscaled canvases, not VideoFrame objects, to limit iPhone memory.
   const pictures=[];
-  const conversionJobs=[];
-  let rgbaCount=0,fallbackCount=0;
   const decoder=new VideoDecoder({
     output(frame){
-      const index=decoded++;
       const picture=document.createElement('canvas');
       picture.width=frame.displayWidth;picture.height=frame.displayHeight;
-      pictures[index]=picture;
-      // Force a CPU-side RGBA conversion instead of directly compositing the
-      // decoder's YUV frame. This tests whether the green tint is a YUV
-      // texture / color conversion issue in Safari.
-      const job=(async()=>{
-        try{
-          const rgba=new Uint8Array(picture.width*picture.height*4);
-          await frame.copyTo(rgba,{format:'RGBA'});
-          const image=new ImageData(new Uint8ClampedArray(rgba.buffer),picture.width,picture.height);
-          picture.getContext('2d').putImageData(image,0,0);
-          rgbaCount++;
-        }catch(err){
-          picture.getContext('2d').drawImage(frame,0,0);
-          fallbackCount++;
-        }finally{frame.close();}
-      })();
-      conversionJobs.push(job);
+      picture.getContext('2d').drawImage(frame,0,0);
+      pictures.push(picture);decoded++;
+      frame.close();
     },
     error(err){decoderError=err;}
   });
@@ -891,7 +874,6 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    await Promise.all(conversionJobs);
     if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
     // The green startup is an actual decoding artifact, not a display filter.
     // Start preview after warm-up; preserve full frames for diagnostic thumbnails.
@@ -951,7 +933,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati. Conversione RGBA: '+rgbaCount+'; fallback YUV: '+fallbackCount+'. Anteprima a 30 fps dopo '+warmup+' fotogrammi iniziali. Se il verde resta, la conversione non basta.';
+    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati. Rendering nativo ripristinato; parametri SPS/PPS prima di IDR. Artefatti ancora da risolvere.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
