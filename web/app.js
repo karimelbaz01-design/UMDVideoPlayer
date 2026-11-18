@@ -986,6 +986,25 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     if(anchored[i].pts!==null&&anchored[i-1].pts!==null&&anchored[i].pts<anchored[i-1].pts)nonMonotonicAnchors++;
     if(anchored[i].unit===anchored[i-1].unit)anchorReorder++;
   }
+  // Read H.264 slice_type from the first VCL NAL. This is diagnostic
+  // and allows presentation-order testing without assuming decode order.
+  const sliceKind=unit=>{
+    const n=unit.members.find(x=>x.type===1||x.type===5);
+    if(!n)return '?';
+    const raw=[];let zeros=0;
+    const next=nals.find(x=>x.at>n.at)?.at??unit.end;
+    for(let k=n.header+1;k<next;k++){
+      const b=data[k];
+      if(zeros>=2&&b===3){zeros=0;continue;}
+      raw.push(b);zeros=b===0?zeros+1:0;
+      if(raw.length>=32)break;
+    }
+    let bit=0;
+    const readBit=()=>{if(bit>=raw.length*8)throw Error('slice header incompleto');const v=(raw[bit>>3]>>(7-(bit&7)))&1;bit++;return v;};
+    const ue=()=>{let zeros=0;while(readBit()===0){zeros++;if(zeros>24)throw Error('ExpGolomb invalido');}let v=1;for(let j=0;j<zeros;j++)v=v*2+readBit();return v-1;};
+    try{ue();const type=ue()%5;return ['P','B','I','SP','SI'][type];}catch{return '?';}
+  };
+  for(const unit of units)unit.pictureType=sliceKind(unit);
   const firstKey=units.findIndex(u=>u.hasIDR);
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
   const first=units[firstKey];
@@ -1025,6 +1044,24 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   try{
     decoder.configure(config);
     const selected=units.slice(firstKey,firstKey+90);
+    // In decode order, B pictures typically follow their future reference.
+    // Build a presentation-order timestamp map for the common closed GOP
+    // pattern: I, P, B, P, B... . Unknown patterns retain decode order.
+    const presentation=[];
+    let pendingReference=null;
+    if(selected.length)presentation.push(0);
+    for(let k=1;k<selected.length;k++){
+      const type=selected[k].pictureType;
+      if(type==='B'){presentation.push(k);}
+      else{
+        if(pendingReference!==null)presentation.push(pendingReference);
+        pendingReference=k;
+      }
+    }
+    if(pendingReference!==null)presentation.push(pendingReference);
+    const presentationRank=new Array(selected.length);
+    presentation.forEach((decodeIndex,rank)=>{presentationRank[decodeIndex]=rank;});
+    const bCount=selected.filter(u=>u.pictureType==='B').length;
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
       const unit=selected[i];
@@ -1043,7 +1080,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
         const combined=new Uint8Array(params.length+chunk.length);
         combined.set(params);combined.set(chunk,params.length);chunk=combined;
       }
-      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:i*33333,data:chunk}));
+      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(presentationRank[i]??i)*33367,data:chunk}));
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
@@ -1147,7 +1184,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
