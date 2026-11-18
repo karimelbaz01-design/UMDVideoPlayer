@@ -153,6 +153,28 @@ isoPicker.onchange=async e=>{
             umdDetails.push('Analisi campione '+mps.name+' ('+sample.length+' byte):');
             umdDetails.push('Start code MPEG-PS: pack='+counts.pack+', system='+counts.system+', video='+counts.video+', private_stream_1='+counts.private1+', audio='+counts.audio);
             umdDetails.push('Nota: conteggio preliminare delle firme, non verifica dei pacchetti né decodifica.');
+            // Check PES header bounds and optional PTS without copying the full UMD movie.
+            const pes={video:0,private1:0,audio:0,invalid:0,pts:0,firstPTS:null,lastPTS:null};
+            for(let i=0;i+9<sample.length;i++){
+              if(sample[i]!==0||sample[i+1]!==0||sample[i+2]!==1)continue;
+              const id=sample[i+3];
+              if(!((id>=0xe0&&id<=0xef)||(id>=0xc0&&id<=0xdf)||id===0xbd))continue;
+              const len=(sample[i+4]<<8)|sample[i+5],flags=sample[i+7],headerLen=sample[i+8];
+              const payload=i+9+headerLen;
+              if((sample[i+6]&0xc0)!==0x80||payload>sample.length||(len!==0&&len<3+headerLen)){pes.invalid++;continue;}
+              if(id===0xbd)pes.private1++;else if(id>=0xe0)pes.video++;else pes.audio++;
+              if((flags&0x80)&&headerLen>=5&&i+14<=sample.length){
+                const p=i+9,b=sample;
+                if((b[p]&1)&&(b[p+2]&1)&&(b[p+4]&1)){
+                  const pts=(b[p]&14)*536870912+b[p+1]*4194304+(b[p+2]&254)*16384+b[p+3]*128+((b[p+4]&254)/2);
+                  if(Number.isFinite(pts)){pes.pts++;if(pes.firstPTS===null)pes.firstPTS=pts;pes.lastPTS=pts;}
+                }
+              }
+            }
+            umdDetails.push('PES header plausibili (campione): video='+pes.video+', private='+pes.private1+', audio='+pes.audio+', non validi='+pes.invalid);
+            umdDetails.push('PTS leggibili='+pes.pts+(pes.firstPTS===null?'':'; primo='+pes.firstPTS+'; ultimo='+pes.lastPTS+' (clock 90 kHz)'));
+            umdDetails.push('Avvertenza: validazione parziale di header, non demux completo o prova del codec.');
+
             }
           }else{umdDetails.push('MPEG-PS: nessun file .MPS riconosciuto nella cartella STREAM.');}
         }
