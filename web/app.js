@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v46 · wider GOP scan windows';
+const FRAME_INSPECTOR_VERSION='UMD v47 · cleaner startup selection';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -915,7 +915,41 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
     // The green startup is an actual decoding artifact, not a display filter.
     // Start preview after warm-up; preserve full frames for diagnostic thumbnails.
-    const warmup=Math.min(15,Math.max(0,pictures.length-1));
+    // Inspect frames without altering pixels. Detect conspicuous green tint
+    // and alternating horizontal scanlines, then start at a cleaner frame.
+    const quality=(picture)=>{
+      const probe=document.createElement('canvas');
+      probe.width=96;probe.height=64;
+      const cx=probe.getContext('2d',{willReadFrequently:true});
+      cx.drawImage(picture,0,0,96,64);
+      const rgba=cx.getImageData(0,0,96,64).data;
+      let green=0,bright=0,alternation=0;
+      const rows=[];
+      for(let y=0;y<64;y++){
+        let luminance=0;
+        for(let x=0;x<96;x++){
+          const k=(y*96+x)*4,r=rgba[k],g=rgba[k+1],b=rgba[k+2];
+          if(g>r*1.38&&g>b*1.38&&g>45)green++;
+          if(r>45||g>45||b>45)bright++;
+          luminance+=(r+g+b)/3;
+        }
+        rows.push(luminance/96);
+      }
+      for(let y=2;y<64;y++)alternation+=Math.abs(rows[y]-2*rows[y-1]+rows[y-2]);
+      return {green:green/6144,striping:alternation/62,visible:bright/6144};
+    };
+    const scores=pictures.map(quality);
+    const baseline=Math.min(15,Math.max(0,pictures.length-1));
+    let warmup=baseline;
+    // Avoid discarding a mostly normal scene: select a later frame only if
+    // it is substantially cleaner than the default 15-frame warm-up.
+    const startScore=q=>q.green*3+q.striping/65+(q.visible<0.12?1:0);
+    const baselineScore=startScore(scores[baseline]);
+    for(let i=baseline+1;i<pictures.length;i++){
+      if(startScore(scores[i])<Math.min(0.48,baselineScore*0.55)){
+        warmup=i;break;
+      }
+    }
     canvas.width=pictures[warmup].width;canvas.height=pictures[warmup].height;
     const context=canvas.getContext('2d');
     context.drawImage(pictures[warmup],0,0);
@@ -950,7 +984,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     stop.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:transparent;color:white';
     const playbackNote=document.createElement('p');
     playbackNote.style.cssText='font-size:12px;color:#c6bccc';
-    playbackNote.textContent='Anteprima silenziosa di '+(pictures.length-warmup)+' fotogrammi a 30 fps; primi '+warmup+' esclusi solo dalla riproduzione perché disturbati. Nessun filtro verde applicato.';
+    playbackNote.textContent='Anteprima silenziosa: avvio al fotogramma '+(warmup+1)+' / '+pictures.length+' (stima automatica di verde e righe). Il controllo non modifica i colori.';
     const live=document.createElement('canvas');
     live.width=canvas.width;live.height=canvas.height;
     live.style.cssText='display:block;width:100%;max-width:520px;height:auto;background:#000;border-radius:10px;margin:10px 0';
@@ -971,7 +1005,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati. Rendering nativo ripristinato; parametri SPS/PPS prima di IDR. Artefatti ancora da risolvere.';
+    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi. Avvio automatico al fotogramma '+(warmup+1)+' (verde stimato '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Diagnosi euristica, non correzione del decoder.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
