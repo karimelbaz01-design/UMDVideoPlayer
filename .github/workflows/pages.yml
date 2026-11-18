@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v20 image diagnostics
+# Deploy FRAME UMD v21 PMF inspection
 on:
   push:
     branches: [main]
