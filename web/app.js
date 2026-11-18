@@ -1034,7 +1034,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const config={codec,hardwareAcceleration:acceleration,optimizeForLatency:false,avc:{format:'annexb'}};
   const supported=await VideoDecoder.isConfigSupported(config);
   if(!supported.supported)throw Error('Decoder Safari non supporta '+codec+' Annex-B.');
-  const prefix=data.subarray(sps.at,pps.at);
+  const spsEnd=nals.find(n=>n.at>sps.at)?.at??pps.at;
+  const prefix=data.subarray(sps.at,spsEnd);
   const ppsEnd=nals.find(n=>n.at>pps.at)?.at??first.begin;
   // The SPS and PPS may be separated by other NAL units. Send only
   // their exact byte ranges, with no intervening SEI/AUD/slices.
