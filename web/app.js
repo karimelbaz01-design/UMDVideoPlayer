@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v26 · PMF loop controls';
+const FRAME_INSPECTOR_VERSION='UMD v27 · stream candidates';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -285,7 +285,31 @@ isoPicker.onchange=async e=>{
         umdDetails.push(folder+': '+files.length+' file');
         umdDetails.push(...files.slice(0,12).map(r=>'  '+r.name+' — '+(r.size/1048576).toFixed(2)+' MiB'));
         if(folder==='STREAM'){
-          const mps=files.filter(r=>/\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size)[0];
+          // Size is only a candidate heuristic, not proof of a playlist target.
+          const mpsCandidates=files.filter(r=>/\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size);
+          const oldCandidates=document.getElementById('frame-umd-stream-candidates');
+          if(oldCandidates)oldCandidates.remove();
+          const candidatesPanel=document.createElement('section');
+          candidatesPanel.id='frame-umd-stream-candidates';
+          candidatesPanel.style.cssText='margin:14px 0;padding:12px;border:1px solid #51445e;border-radius:12px;background:#171520;color:#eee';
+          const title=document.createElement('strong');
+          title.textContent='UMD VIDEO · CONTENUTI DA IDENTIFICARE';
+          const hint=document.createElement('p');
+          hint.style.cssText='font-size:13px;line-height:1.5;color:#c6bccc';
+          hint.textContent='La dimensione suggerisce quali file contengono il film, ma non basta per identificare PLAY o Bonus. Serve leggere i riferimenti della playlist.';
+          candidatesPanel.append(title,hint);
+          for(const [index,entry] of mpsCandidates.entries()){
+            const line=document.createElement('p');
+            line.style.cssText='font-size:13px;margin:6px 0;overflow-wrap:anywhere';
+            line.textContent=entry.name+' · '+(entry.size/1048576).toFixed(2)+' MiB'+(index===0?' · candidato principale (non verificato)':' · contenuto da classificare');
+            candidatesPanel.appendChild(line);
+          }
+          const note=document.createElement('p');
+          note.style.cssText='font-size:12px;color:#c6bccc';
+          note.textContent='PLAY non è ancora collegato: un file MPS non è un MP4 e il browser non può avviarlo direttamente.';
+          candidatesPanel.appendChild(note);
+          panel.insertAdjacentElement('afterend',candidatesPanel);
+          const mps=mpsCandidates[0];
           if(mps){
             const start=mps.extent*2048;
             const available=Math.max(0,file.size-start);
