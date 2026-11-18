@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v51 · continuous NAL access unit parsing';
+const FRAME_INSPECTOR_VERSION='UMD v52 · PES timestamp to AUD mapping';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -488,7 +488,7 @@ isoPicker.onchange=async e=>{
               frameCanvas.style.display='block';
               frameReport.textContent='Tentativo WebCodecs sul video estratto dai PES…';
               try{
-                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport);
+                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-software',movieSamples[Number(samplePicker.value)]?.timing||[]);
                 frameReport.textContent='TEST FILM PES: '+frameReport.textContent+' Controlla visivamente: righe verdi o immagini distorte NON sono un fotogramma valido.';
               }catch(err){frameReport.textContent='Test PES non riuscito: '+err.message;}
               finally{frameButton.disabled=false;}
@@ -503,7 +503,7 @@ isoPicker.onchange=async e=>{
               frameCanvas.style.display='block';
               frameReport.textContent='Prova del percorso hardware WebCodecs sul punto '+(movieSamples[Number(samplePicker.value)]?.percent??'?')+'%…';
               try{
-                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-hardware');
+                await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-hardware',movieSamples[Number(samplePicker.value)]?.timing||[]);
                 frameReport.textContent+=' Il browser può usare lo stesso decoder anche con questa preferenza; il confronto visivo non garantisce un percorso diverso.';
               }catch(err){frameReport.textContent='Decoder hardware: '+err.message;}
               finally{alternateButton.disabled=false;}
@@ -523,6 +523,7 @@ isoPicker.onchange=async e=>{
                   // A window may start in the middle of a packet; resynchronize
                   // at a plausible pack header and never count raw MPS bytes.
                   const videoParts=[];
+                  const videoTiming=[];
                   let pesPackets=0,videoBytes=0;
                   let ptsPackets=0,dtsPackets=0,invalidPts=0,backwardPts=0,largePtsGaps=0;
                   let ptsDtsDifferent=0,ptsDtsMaxMs=0,invalidPes=0,splitNalPrefixes=0;
@@ -549,6 +550,9 @@ isoPicker.onchange=async e=>{
                     if((bytes[pos+6]&0xc0)!==0x80||begin>end||end>bytes.length||!length){invalidPes++;pos++;continue;}
                     if(id>=0xe0&&id<=0xef&&begin<end){
                       const flags=(bytes[pos+7]>>6)&3;
+                      const payloadPts=(flags===2||flags===3)?readClock(pos+9):null;
+                      const payloadDts=flags===3?readClock(pos+14):null;
+                      videoTiming.push({at:videoBytes,pts:payloadPts,dts:payloadDts});
                       if(flags===2||flags===3){
                         const pts=readClock(pos+9);
                         if(pts===null)invalidPts++;
@@ -637,7 +641,10 @@ isoPicker.onchange=async e=>{
                             valid=true;break;
                           }
                         }
-                        if(valid&&candidate.length>1000)movieSamples.push({percent:Math.round(offset/Math.max(1,mps.size)*100),data:candidate});
+                        if(valid&&candidate.length>1000)movieSamples.push({
+                          percent:Math.round(offset/Math.max(1,mps.size)*100),data:candidate,
+                          timing:videoTiming.filter(p=>p.at>=cut).map(p=>({...p,at:p.at-cut}))
+                        });
                       }
                     }
                   }
@@ -892,7 +899,7 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
 // Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
 // with Annex-B access units grouped at AUD boundaries (NAL type 9).
 // No upload or remote conversion; unsupported Safari versions show an error.
-async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software'){
+async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[]){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs non disponibile in questo browser.');
   const nals=[];
@@ -923,6 +930,21 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(slices.length>1)multiSliceUnits++;
       units.push({begin,end,hasIDR,members,sliceCount:slices.length});
     }else discardedUnits++;
+  }
+  // PES timestamps are sparse (often one timestamp per many video PES
+  // packets). Associate anchors with nearby AUD access units for diagnosis;
+  // do not falsely assign a single PES PTS to every contained picture.
+  const timingAnchors=pesTiming.filter(t=>t.pts!==null||t.dts!==null);
+  const nearestUnit=at=>{
+    let lo=0,hi=units.length;
+    while(lo<hi){const mid=(lo+hi)>>1;if(units[mid].begin<at)lo=mid+1;else hi=mid;}
+    return Math.min(lo,units.length-1);
+  };
+  const anchored=timingAnchors.map(t=>({unit:nearestUnit(t.at),pts:t.pts,dts:t.dts}));
+  let nonMonotonicAnchors=0,anchorReorder=0;
+  for(let i=1;i<anchored.length;i++){
+    if(anchored[i].pts!==null&&anchored[i-1].pts!==null&&anchored[i].pts<anchored[i-1].pts)nonMonotonicAnchors++;
+    if(anchored[i].unit===anchored[i-1].unit)anchorReorder++;
   }
   const firstKey=units.findIndex(u=>u.hasIDR);
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
@@ -1070,7 +1092,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
