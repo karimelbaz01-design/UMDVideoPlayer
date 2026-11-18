@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Refresh web preview after iOS ISO picker diagnostics
+# Publish UMD STREAM CLIPINF playlist inspection
 on:
   push:
     branches: [main]
