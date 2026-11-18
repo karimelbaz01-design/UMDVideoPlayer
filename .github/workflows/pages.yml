@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v14 sample export
+# Deploy FRAME UMD v15 extended sample
 on:
   push:
     branches: [main]
