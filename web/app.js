@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v31 · scan button placement';
+const FRAME_INSPECTOR_VERSION='UMD v33 · PES video scan';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -467,12 +467,41 @@ isoPicker.onchange=async e=>{
                   // Sample across the whole movie without reading 1+ GiB into RAM.
                   const offset=Math.floor((mps.size-windowBytes)*index/Math.max(1,sections-1));
                   const bytes=new Uint8Array(await file.slice(start+offset,start+offset+windowBytes).arrayBuffer());
+                  // Parse MPEG-PS packet boundaries before inspecting H.264.
+                  // A window may start in the middle of a packet; resynchronize
+                  // at a plausible pack header and never count raw MPS bytes.
+                  const videoParts=[];
+                  let pesPackets=0,videoBytes=0;
+                  for(let pos=0;pos+14<bytes.length;){
+                    if(bytes[pos]!==0||bytes[pos+1]!==0||bytes[pos+2]!==1){pos++;continue;}
+                    const id=bytes[pos+3];
+                    if(id===0xba){pos+=14+(bytes[pos+13]&7);continue;}
+                    if(id===0xbb||id===0xbc||id===0xbe||id===0xbf){
+                      const size=(bytes[pos+4]<<8)|bytes[pos+5];
+                      pos+=6+size;continue;
+                    }
+                    if(id<0xbd||id>0xef){pos++;continue;}
+                    const length=(bytes[pos+4]<<8)|bytes[pos+5];
+                    const header=bytes[pos+8];
+                    const end=length?pos+6+length:bytes.length;
+                    const begin=pos+9+header;
+                    if((bytes[pos+6]&0xc0)!==0x80||begin>end||end>bytes.length||!length){pos++;continue;}
+                    if(id>=0xe0&&id<=0xef&&begin<end){
+                      videoParts.push(bytes.subarray(begin,end));
+                      videoBytes+=end-begin;
+                      pesPackets++;
+                    }
+                    pos=end;
+                  }
+                  const elementary=new Uint8Array(videoBytes);
+                  let write=0;
+                  for(const part of videoParts){elementary.set(part,write);write+=part.length;}
                   const nals={sps:0,pps:0,idr:0,aud:0};
-                  for(let j=0;j+5<bytes.length;j++){
-                    if(bytes[j]!==0||bytes[j+1]!==0)continue;
-                    const p=bytes[j+2]===1?3:(bytes[j+2]===0&&bytes[j+3]===1?4:0);
+                  for(let j=0;j+5<elementary.length;j++){
+                    if(elementary[j]!==0||elementary[j+1]!==0)continue;
+                    const p=elementary[j+2]===1?3:(elementary[j+2]===0&&elementary[j+3]===1?4:0);
                     if(!p)continue;
-                    const h=bytes[j+p],type=h&31;
+                    const h=elementary[j+p],type=h&31;
                     if(h&128)continue;
                     if(type===7)nals.sps++;
                     if(type===8)nals.pps++;
@@ -480,12 +509,12 @@ isoPicker.onchange=async e=>{
                     if(type===9)nals.aud++;
                     j+=p;
                   }
-                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),...nals});
+                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,...nals});
                   if(index%4===3)scanReport.textContent='Analizzate '+(index+1)+'/'+sections+' posizioni…';
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
                 const candidates=rows.filter(r=>r.sps&&r.pps&&r.idr);
-                scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR.\n'+rows.map(r=>r.percent+'%: SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme grezze MPEG-PS, non fotogrammi validati. Il test non riproduce ancora il film.';
+                scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
