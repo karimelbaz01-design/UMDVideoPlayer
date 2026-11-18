@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v25 · menu resource investigation';
+const FRAME_INSPECTOR_VERSION='UMD v26 · PMF loop controls';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -245,14 +245,24 @@ isoPicker.onchange=async e=>{
               canvas.style.cssText='display:none;width:288px;max-width:100%;aspect-ratio:9/5;background:#000;border-radius:10px;image-rendering:auto';
               const status=document.createElement('p');
               status.style.cssText='font-size:13px;color:#c6bccc;overflow-wrap:anywhere';
+              let playbackController=null;
               previewButton.onclick=async()=>{
-                previewButton.disabled=true;
+                if(playbackController){
+                  playbackController.abort();
+                  return;
+                }
+                const controller=new AbortController();
+                playbackController=controller;
+                previewButton.textContent='■ FERMA ANTEPRIMA';
                 canvas.style.display='block';
                 status.textContent='Preparazione decoder H.264…';
                 try{
-                  await framePreviewH264(elementary,canvas,status);
-                }catch(err){status.textContent='Anteprima non disponibile: '+err.message;}
-                finally{previewButton.disabled=false;}
+                  await framePreviewH264(elementary,canvas,status,controller.signal);
+                }catch(err){if(!controller.signal.aborted)status.textContent='Anteprima non disponibile: '+err.message;}
+                finally{
+                  if(playbackController===controller)playbackController=null;
+                  previewButton.textContent='▶ RIPRODUCI ANTEPRIMA ANIMATA (BETA)';
+                }
               };
               panel.append(previewButton,canvas,status);
             }
@@ -600,7 +610,7 @@ if (window.FrameNative && typeof window.FrameNative.previewUmd === 'function') {
 // Experimental local UMD ICON1.PMF animation: native browser WebCodecs,
 // with Annex-B access units grouped at AUD boundaries (NAL type 9).
 // No upload or remote conversion; unsupported Safari versions show an error.
-async function framePreviewH264(data,canvas,status){
+async function framePreviewH264(data,canvas,status,signal){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs VideoDecoder non supportato in questo browser. Usa Safari aggiornato o la futura app nativa.');
   const nals=[];
@@ -670,37 +680,49 @@ async function framePreviewH264(data,canvas,status){
     const firstTimestamp=frames[0].timestamp;
     const durationUs=Math.max(0,frames[frames.length-1].timestamp-firstTimestamp);
     const fps=durationUs>0?Math.round((frames.length-1)*1000000/durationUs):0;
+    const previous=canvas.parentElement.querySelector('[data-frame-pmf-diagnostic]');
+    if(previous)previous.remove();
     const diagnostic=document.createElement('div');
-    diagnostic.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin:10px 0';
+    diagnostic.dataset.framePmfDiagnostic='true';
+    diagnostic.style.cssText='display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0;max-width:100%';
     for(let j=0;j<snapshots.length;j++){
       const thumb=document.createElement('canvas');
       thumb.width=144;thumb.height=80;
-      thumb.style.cssText='width:30%;max-width:144px;min-width:85px;border-radius:6px;background:#000';
+      thumb.style.cssText='display:block;width:100%;height:auto;border-radius:6px;background:#000';
       thumb.getContext('2d').drawImage(frames[snapshots[j]],0,0,144,80);
       const wrap=document.createElement('div');
-      wrap.style.cssText='flex:1;min-width:85px;max-width:144px;font-size:11px;color:#c6bccc';
+      wrap.style.cssText='min-width:0;font-size:11px;color:#c6bccc';
       wrap.append(thumb,document.createTextNode(['Inizio','Metà','Fine'][j]));
       diagnostic.appendChild(wrap);
     }
     canvas.insertAdjacentElement('afterend',diagnostic);
-    status.textContent='Campioni differenti: '+unique+'/3. '+frames.length+' fotogrammi; '+(fps||'FPS non rilevati')+' fps stimati. Riproduzione…';
-    const startTime=performance.now();
-    let lastShown=-1;
+    const frameDuration=durationUs>0?durationUs/Math.max(1,frames.length-1):33333;
+    const loopDuration=durationUs+frameDuration;
+    const loops=3;
+    status.textContent='Campioni differenti: '+unique+'/3 · '+frames.length+' fotogrammi · '+(fps||'?')+' fps. Riproduzione x'+loops+'; premi FERMA per interrompere.';
+    const started=performance.now();
     await new Promise(resolve=>{
+      let raf=0;
+      const stop=()=>{if(raf)cancelAnimationFrame(raf);resolve();};
+      if(signal)signal.addEventListener('abort',stop,{once:true});
       function tick(now){
-        const elapsedUs=(now-startTime)*1000;
-        let target=lastShown+1;
-        while(target+1<frames.length&&frames[target+1].timestamp-firstTimestamp<=elapsedUs)target++;
-        if(target<frames.length&&target!==lastShown){
-          ctx.drawImage(frames[target],0,0,canvas.width,canvas.height);
-          lastShown=target;
+        if(signal?.aborted){stop();return;}
+        const elapsed=(now-started)*1000;
+        if(elapsed>=loopDuration*loops){
+          ctx.drawImage(frames[frames.length-1],0,0,canvas.width,canvas.height);
+          resolve();
+          return;
         }
-        if(lastShown>=frames.length-1)resolve();
-        else requestAnimationFrame(tick);
+        const localTime=elapsed%loopDuration;
+        let index=0;
+        while(index+1<frames.length&&frames[index+1].timestamp-firstTimestamp<=localTime)index++;
+        ctx.drawImage(frames[index],0,0,canvas.width,canvas.height);
+        raf=requestAnimationFrame(tick);
       }
-      requestAnimationFrame(tick);
+      raf=requestAnimationFrame(tick);
     });
-    status.textContent='Anteprima terminata: '+frames.length+' fotogrammi, '+(fps||'?')+' fps stimati, '+unique+'/3 campioni differenti. Miniature inizio/metà/fine visibili. Nessun audio.';
+    status.textContent=signal?.aborted?'Anteprima interrotta. Campioni differenti: '+unique+'/3.':
+      'Anteprima riprodotta '+loops+' volte: '+frames.length+' fotogrammi, '+(fps||'?')+' fps stimati, '+unique+'/3 campioni differenti. Nessun audio.';
   }finally{
     for(const frame of frames)frame.close();
     if(decoder.state!=='closed')decoder.close();
