@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v21 PMF inspection
+# Deploy FRAME UMD v22 PMF stream probe
 on:
   push:
     branches: [main]
