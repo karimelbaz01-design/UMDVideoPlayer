@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v12 NAL SPS quality
+# Deploy FRAME UMD v13 SPS resolution
 on:
   push:
     branches: [main]
