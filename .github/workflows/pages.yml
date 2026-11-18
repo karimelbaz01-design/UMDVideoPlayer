@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v9 PES PTS probe
+# Deploy FRAME UMD v10 PES demux probe
 on:
   push:
     branches: [main]
