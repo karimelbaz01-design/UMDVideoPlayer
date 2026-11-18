@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v14 · H264 sample export';
+const FRAME_INSPECTOR_VERSION='UMD v15 · extended H264 sample';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -317,7 +317,7 @@ isoPicker.onchange=async e=>{
               const type=joined[starts[j].header]&31;
               if(exportStart<0){if(type===7)exportStart=j;continue;}
               if(type===8)hasPps=true;
-              if(hasPps&&type===5){exportEnd=Math.min(starts.length-1,j+24);break;}
+              if(hasPps&&type===5){exportEnd=starts.length-1;break;}
             }
             if(exportStart>=0&&exportEnd>exportStart){
               const first=starts[exportStart].at,last=starts[exportEnd].at;
