@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v33 · PES video scan';
+const FRAME_INSPECTOR_VERSION='UMD v34 · PES frame probe';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -457,8 +457,30 @@ isoPicker.onchange=async e=>{
             scanButton.style.cssText='display:block;margin-top:10px;padding:12px;border:1px solid #8d79aa;border-radius:10px;background:transparent;color:#eee;font-weight:700;max-width:100%';
             const scanReport=document.createElement('p');
             scanReport.style.cssText='font-size:12px;color:#c6bccc;white-space:pre-wrap;overflow-wrap:anywhere';
+            const frameButton=document.createElement('button');
+            frameButton.type='button';
+            frameButton.textContent='▶ PROVA PRIMO FOTOGRAMMA (PES)';
+            frameButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700;max-width:100%';
+            const frameCanvas=document.createElement('canvas');
+            frameCanvas.width=288;frameCanvas.height=160;
+            frameCanvas.style.cssText='display:none;width:288px;max-width:100%;background:#000;border-radius:10px;margin-top:10px';
+            const frameReport=document.createElement('p');
+            frameReport.style.cssText='font-size:12px;color:#c6bccc;overflow-wrap:anywhere';
+            let frameCandidate=null;
+            frameButton.onclick=async()=>{
+              if(!frameCandidate)return;
+              frameButton.disabled=true;
+              frameCanvas.style.display='block';
+              frameReport.textContent='Tentativo WebCodecs sul video estratto dai PES…';
+              try{
+                await framePreviewH264(frameCandidate,frameCanvas,frameReport);
+                frameReport.textContent='TEST FILM PES: '+frameReport.textContent+' Controlla visivamente: righe verdi o immagini distorte NON sono un fotogramma valido.';
+              }catch(err){frameReport.textContent='Test PES non riuscito: '+err.message;}
+              finally{frameButton.disabled=false;}
+            };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
+              frameCandidate=null;frameButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca in corso su 16 posizioni del file MPS…';
               try{
                 const sections=16,windowBytes=524288;
@@ -509,16 +531,37 @@ isoPicker.onchange=async e=>{
                     if(type===9)nals.aud++;
                     j+=p;
                   }
+                  if(!frameCandidate&&nals.sps&&nals.pps&&nals.idr&&nals.aud){
+                    // Keep only a bounded local sample. Trim to a parameter set
+                    // before the first IDR so the decoder starts on a keyframe.
+                    const marks=[];
+                    for(let q=0;q+5<elementary.length;q++){
+                      if(elementary[q]!==0||elementary[q+1]!==0)continue;
+                      const prefix=elementary[q+2]===1?3:(elementary[q+2]===0&&elementary[q+3]===1?4:0);
+                      if(prefix){marks.push({at:q,type:elementary[q+prefix]&31});q+=prefix-1;}
+                    }
+                    const idr=marks.findIndex(x=>x.type===5);
+                    if(idr>=0){
+                      let first=-1;
+                      for(let q=idr;q>=0;q--)if(marks[q].type===7){first=q;break;}
+                      if(first>=0&&marks.slice(first,idr).some(x=>x.type===8)){
+                        const cut=marks[first].at;
+                        const candidate=elementary.slice(cut);
+                        if(candidate.length>1000)frameCandidate=candidate;
+                      }
+                    }
+                  }
                   rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),pesPackets,videoBytes,...nals});
                   if(index%4===3)scanReport.textContent='Analizzate '+(index+1)+'/'+sections+' posizioni…';
                   await new Promise(resolve=>setTimeout(resolve,0));
                 }
                 const candidates=rows.filter(r=>r.sps&&r.pps&&r.idr);
+                if(frameCandidate){frameButton.style.display='block';frameReport.textContent='Campione PES disponibile: '+frameCandidate.length+' byte. Il test è sperimentale e può mostrare artefatti.';}
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,frameButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
