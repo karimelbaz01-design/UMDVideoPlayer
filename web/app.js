@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v54 · frame reordering latency fix';
+const FRAME_INSPECTOR_VERSION='UMD v55 · original MPS sample export';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -451,6 +451,34 @@ isoPicker.onchange=async e=>{
               catch(err){movieStatus.textContent='Campione non decodificabile: '+err.message+'. È necessario un demux/lettore completo.';}
               finally{movieButton.disabled=false;}
             };
+            const exportButton=document.createElement('button');
+            exportButton.type='button';
+            exportButton.textContent='ESPORTA CAMPIONE MPS · 20 MB (7%)';
+            exportButton.style.cssText='display:block;margin-top:10px;padding:12px;border:1px solid #8d79aa;border-radius:10px;background:#30263f;color:#fff;font-weight:700;max-width:100%';
+            const exportReport=document.createElement('p');
+            exportReport.style.cssText='font-size:12px;color:#c6bccc;overflow-wrap:anywhere';
+            exportButton.onclick=async()=>{
+              exportButton.disabled=true;
+              exportReport.textContent='Preparazione del campione originale…';
+              try{
+                const size=Math.min(20*1024*1024,mps.size,Math.max(0,file.size-start));
+                if(size<1024)throw Error('File MPS non disponibile nella ISO.');
+                const target=Math.floor(Math.max(0,mps.size-size)*0.07);
+                // This is a byte-exact excerpt, not a converted or remuxed video.
+                const blob=file.slice(start+target,start+target+size,'application/octet-stream');
+                const url=URL.createObjectURL(blob);
+                const link=document.createElement('a');
+                link.href=url;
+                link.download='FRAME_00001_MPS_7percent_20MiB.bin';
+                link.style.display='none';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(()=>URL.revokeObjectURL(url),60000);
+                exportReport.textContent='Richiesto il salvataggio del campione originale da '+(target/1048576).toFixed(1)+' MiB, '+(size/1048576).toFixed(1)+' MiB. Su iPhone controlla Download in Safari o File. È un estratto grezzo, non un video riproducibile autonomamente.';
+              }catch(err){exportReport.textContent='Esportazione non riuscita: '+err.message;}
+              finally{exportButton.disabled=false;}
+            };
             const scanButton=document.createElement('button');
             scanButton.type='button';
             scanButton.textContent='CERCA PUNTI DI AVVIO NEL FILM';
@@ -681,7 +709,7 @@ isoPicker.onchange=async e=>{
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,scanButton,scanReport,samplePicker,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
