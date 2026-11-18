@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Refresh Safari cache for UMD STREAM CLIPINF inspection
+# Deploy bounded UMD MPEG-PS stream probe
 on:
   push:
     branches: [main]
