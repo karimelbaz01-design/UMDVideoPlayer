@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v16 slice diagnostics
+# Deploy FRAME UMD v17 NAL breakdown
 on:
   push:
     branches: [main]
