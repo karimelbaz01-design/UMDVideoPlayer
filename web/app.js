@@ -127,6 +127,27 @@ isoPicker.onchange=async e=>{
         const files=entries.filter(r=>!r.directory);
         umdDetails.push(folder+': '+files.length+' file');
         umdDetails.push(...files.slice(0,12).map(r=>'  '+r.name+' — '+(r.size/1048576).toFixed(2)+' MiB'));
+        if(folder==='STREAM'){
+          const mps=files.filter(r=>/\\.MPS$/i.test(r.name)).sort((a,b)=>b.size-a.size)[0];
+          if(mps&&mps.extent*2048+mps.size<=file.size){
+            const sample=new Uint8Array(await file.slice(mps.extent*2048,mps.extent*2048+Math.min(mps.size,262144)).arrayBuffer());
+            const counts={pack:0,system:0,video:0,private1:0,audio:0,other:0};
+            for(let i=0;i+4<sample.length;i++){
+              if(sample[i]!==0||sample[i+1]!==0||sample[i+2]!==1)continue;
+              const code=sample[i+3];
+              if(code===0xba)counts.pack++;
+              else if(code===0xbb)counts.system++;
+              else if(code>=0xe0&&code<=0xef)counts.video++;
+              else if(code===0xbd)counts.private1++;
+              else if(code>=0xc0&&code<=0xdf)counts.audio++;
+              else counts.other++;
+              i+=3;
+            }
+            umdDetails.push('Analisi campione '+mps.name+' ('+sample.length+' byte):');
+            umdDetails.push('Start code MPEG-PS: pack='+counts.pack+', system='+counts.system+', video='+counts.video+', private_stream_1='+counts.private1+', audio='+counts.audio);
+            umdDetails.push('Nota: conteggio preliminare delle firme, non verifica dei pacchetti né decodifica.');
+          }
+        }
         if(files.length>12)umdDetails.push('  … e altri '+(files.length-12)+' file');
       }
       const playlist=contents.find(r=>r.name.toUpperCase()==='PLAYLIST.UMD'&&!r.directory);
