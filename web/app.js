@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v24 · PMF timed playback';
+const FRAME_INSPECTOR_VERSION='UMD v25 · menu resource investigation';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -524,6 +524,46 @@ isoPicker.onchange=async e=>{
           umdDetails.push('Intestazione playlist (hex): '+Array.from(header.slice(0,24),b=>b.toString(16).padStart(2,'0')).join(' '));
         }
       }
+      // UMD menu investigation: inspect the actual disc structures rather than
+      // presenting a fabricated PSP menu or guessing which MPS is "Play".
+      const oldMenu=document.getElementById('frame-umd-menu-inspector');
+      if(oldMenu)oldMenu.remove();
+      const menuPanel=document.createElement('section');
+      menuPanel.id='frame-umd-menu-inspector';
+      menuPanel.style.cssText='margin:14px 0;padding:12px;border:1px solid #51445e;border-radius:12px;background:#171520;color:#eee;max-width:100%;overflow-wrap:anywhere';
+      const menuTitle=document.createElement('strong');
+      menuTitle.textContent='MENU UMD · INDAGINE STRUTTURALE';
+      const menuIntro=document.createElement('p');
+      menuIntro.style.cssText='font-size:13px;line-height:1.5;color:#c6bccc';
+      menuIntro.textContent='Il menu originale (PLAY e riquadri illustrati) non coincide con ICON1.PMF. Qui leggiamo le risorse reali del disco; i comandi del film non sono ancora attivi.';
+      menuPanel.append(menuTitle,menuIntro);
+      const menuInfo=document.createElement('pre');
+      menuInfo.style.cssText='font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto';
+      const menuLines=[];
+      if(resources){
+        const entries=await inspectIsoDirectory(file,resources.extent,resources.size);
+        menuLines.push('RESOURCE ('+entries.length+' elementi):');
+        for(const entry of entries.slice(0,35))menuLines.push('  '+(entry.directory?'[DIR] ':'')+entry.name+(entry.directory?'':' · '+entry.size+' byte'));
+      }else menuLines.push('RESOURCE: cartella assente');
+      if(playlist&&playlist.extent*2048+playlist.size<=file.size&&playlist.size<=8388608){
+        const bytes=new Uint8Array(await file.slice(playlist.extent*2048,playlist.extent*2048+playlist.size).arrayBuffer());
+        const strings=[];
+        let current='';
+        for(const byte of bytes){
+          if(byte>=32&&byte<=126)current+=String.fromCharCode(byte);
+          else{if(current.length>=4)strings.push(current);current='';}
+        }
+        if(current.length>=4)strings.push(current);
+        menuLines.push('PLAYLIST.UMD: '+bytes.length+' byte');
+        menuLines.push('Stringhe ASCII leggibili (non interpretate): '+(strings.slice(0,24).join(' | ')||'nessuna'));
+        menuLines.push('Primi 96 byte HEX: '+Array.from(bytes.slice(0,96),x=>x.toString(16).padStart(2,'0')).join(' '));
+      }else menuLines.push('PLAYLIST.UMD: non disponibile per analisi');
+      menuInfo.textContent=menuLines.join('\n');
+      const menuNote=document.createElement('p');
+      menuNote.style.cssText='font-size:12px;color:#c6bccc';
+      menuNote.textContent='Analisi locale: nessun file caricato online. Non sono ancora stati ricostruiti i pulsanti, i collegamenti o il motore dei menu UMD.';
+      menuPanel.append(menuInfo,menuNote);
+      panel.insertAdjacentElement('afterend',menuPanel);
       umdDetails.push('Lettura STREAM/CLIPINF: sola ispezione; decoder e audio UMD non integrati nel browser.');
     }
     const report=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),...Object.entries(metadata).map(([key,value])=>key+': '+value),detail,...umdDetails,'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'];
