@@ -81,12 +81,14 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
+const FRAME_INSPECTOR_VERSION='UMD v7 · MPEG-PS probe';
+isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
 isoPicker.onchange=async e=>{
   const file=e.target.files&&e.target.files[0];
   if(!file){isoReport.textContent='Il browser non ha restituito alcun file. Prova a spostare la ISO in Sul mio iPhone → Download.';return;}
-  const out=isoReport;out.textContent='File selezionato: '+file.name+' ('+file.size+' byte).\\nAnalisi in corso…';
+  const out=isoReport;out.textContent='Analizzatore: '+FRAME_INSPECTOR_VERSION+'\nFile selezionato: '+file.name+' ('+file.size+' byte).\nAnalisi in corso…';
   try{
     const sector=2048, pvdOffset=16*sector;
     if(file.size<pvdOffset+sector)throw Error('Immagine troppo piccola per una ISO PSP.');
@@ -117,7 +119,7 @@ isoPicker.onchange=async e=>{
       if(sfo)metadata=await inspectSfo(file,sfo);
       detail='Elementi nella cartella '+selected.name+': '+contents.slice(0,24).map(r=>r.name).join(', ');
     }
-    let umdDetails=[];
+    let umdDetails=['Analizzatore: '+FRAME_INSPECTOR_VERSION];
     if(umd&&selected){
       const contents=await inspectIsoDirectory(file,selected.extent,selected.size);
       for(const folder of ['STREAM','CLIPINF']){
@@ -162,7 +164,7 @@ isoPicker.onchange=async e=>{
     }
     const report=['File: '+file.name,'Formato: ISO9660','Dimensione: '+file.size+' byte','Volume: '+(volume||'Non indicato'),'Cartelle radice: '+(names.join(', ')||'Nessuna rilevata'),'Tipo rilevato: '+(umd?'UMD VIDEO':game?'PSP GAME':'ISO non identificata come gioco o UMD Video'),...Object.entries(metadata).map(([key,value])=>key+': '+value),detail,...umdDetails,'Integrità: struttura di base leggibile; contenuto e riproduzione non verificati.','Riproduzione PSP/UMD: non ancora disponibile in Safari.'];
     out.textContent=report.filter(Boolean).join(String.fromCharCode(10));
-  }catch(err){out.textContent='Analisi non riuscita: '+err.message;}
+  }catch(err){out.textContent='Analizzatore: '+FRAME_INSPECTOR_VERSION+'\nAnalisi non riuscita: '+err.message;}
   finally{e.target.value='';}
 };
 
