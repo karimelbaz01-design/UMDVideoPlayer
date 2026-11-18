@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v61 · MP4 faststart and export';
+const FRAME_INSPECTOR_VERSION='UMD v62 · preserve original AVC NAL bytes';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -991,12 +991,17 @@ function frameNativeMp4(data){
   }
   const aud=nals.filter(n=>n.type===9);
   if(aud.length<4)throw Error('Campione senza delimitatori H264 sufficienti');
-  const sps=nals.find(n=>n.type===7),pps=nals.find(n=>n.type===8);
-  if(!sps||!pps)throw Error('SPS/PPS non presenti nel campione');
+  const firstIdr=nals.find(n=>n.type===5);
+  if(!firstIdr)throw Error('Nessun IDR nel campione');
+  const beforeIdr=nals.filter(n=>n.at<firstIdr.at);
+  const pps=[...beforeIdr].reverse().find(n=>n.type===8);
+  const sps=pps&&[...beforeIdr].reverse().find(n=>n.type===7&&n.at<pps.at);
+  if(!sps||!pps)throw Error('SPS/PPS validi non presenti prima dell’IDR');
   const payload=n=>{
     const next=nals.find(x=>x.at>n.at);
-    let end=next?next.at:data.length;
-    while(end>n.header+1&&data[end-1]===0)end--;
+    const end=next?next.at:data.length;
+    // Do not strip trailing zero bytes: H.264 CABAC alignment and padding
+    // must be retained exactly until the next Annex-B start code.
     return data.subarray(n.header,end);
   };
   const spsData=payload(sps),ppsData=payload(pps);
@@ -1010,7 +1015,7 @@ function frameNativeMp4(data){
     while(cursor<nals.length&&nals[cursor].at<end)members.push(nals[cursor++]);
     const slices=members.filter(n=>n.type===1||n.type===5);
     if(!slices.length)continue;
-    const parts=members.filter(n=>n.type!==9&&n.type!==7&&n.type!==8&&n.type!==12).map(payload);
+    const parts=members.filter(n=>n.type!==9&&n.type!==12).map(payload);
     units.push({parts,key:slices.some(n=>n.type===5)});
   }
   const key=units.findIndex(u=>u.key);
