@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy FRAME UMD v13 SPS resolution
+# Deploy FRAME UMD v14 sample export
 on:
   push:
     branches: [main]
