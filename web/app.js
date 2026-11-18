@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v38 · longer frame sample';
+const FRAME_INSPECTOR_VERSION='UMD v39 · 30fps frame preview';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -844,13 +844,15 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const params=new Uint8Array(prefix.length+Math.max(0,ppsEnd-pps.at));
   params.set(prefix);params.set(data.subarray(pps.at,ppsEnd),prefix.length);
   let decoded=0,decoderError=null;
-  const retained=new Map();
-  const sampleIndices=new Set([0,29,59,89]);
+  // Retain downscaled canvases, not VideoFrame objects, to limit iPhone memory.
+  const pictures=[];
   const decoder=new VideoDecoder({
     output(frame){
-      const index=decoded++;
-      if(sampleIndices.has(index))retained.set(index,frame);
-      else frame.close();
+      const picture=document.createElement('canvas');
+      picture.width=360;picture.height=240;
+      picture.getContext('2d').drawImage(frame,0,0,360,240);
+      pictures.push(picture);decoded++;
+      frame.close();
     },
     error(err){decoderError=err;}
   });
@@ -869,61 +871,59 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    if(!retained.size)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
-    const first=retained.values().next().value;
-    canvas.width=first.displayWidth;canvas.height=first.displayHeight;
-    canvas.getContext('2d').drawImage(first,0,0);
+    if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    // The green startup is an actual decoding artifact, not a display filter.
+    // Start preview after warm-up; preserve full frames for diagnostic thumbnails.
+    const warmup=Math.min(15,Math.max(0,pictures.length-1));
+    canvas.width=360;canvas.height=240;
+    const context=canvas.getContext('2d');
+    context.drawImage(pictures[warmup],0,0);
     const oldGrid=canvas.parentElement.querySelector('[data-frame-movie-samples]');
     if(oldGrid)oldGrid.remove();
     const grid=document.createElement('div');
     grid.dataset.frameMovieSamples='true';
     grid.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0';
-    for(const [index,frame] of retained){
+    const indices=[0,29,59,89].filter(i=>i<pictures.length);
+    for(const index of indices){
       const cell=document.createElement('div');
-      const thumbnail=document.createElement('canvas');
-      thumbnail.width=288;thumbnail.height=192;
-      thumbnail.style.cssText='width:100%;height:auto;background:black;border-radius:8px';
-      thumbnail.getContext('2d').drawImage(frame,0,0,288,192);
+      const thumbnail=pictures[index];
+      const preview=document.createElement('canvas');
+      preview.width=288;preview.height=192;
+      preview.style.cssText='width:100%;height:auto;background:black;border-radius:8px';
+      preview.getContext('2d').drawImage(thumbnail,0,0,288,192);
       const caption=document.createElement('p');
       caption.style.cssText='font-size:12px;margin:3px 0';
       caption.textContent='Fotogramma '+(index+1)+' / '+decoded;
-      cell.append(thumbnail,caption);grid.appendChild(cell);
+      cell.append(preview,caption);grid.appendChild(cell);
     }
     canvas.insertAdjacentElement('afterend',grid);
-    // Replay decoded images from a bounded memory cache; playback is silent.
-    // Close old frame objects when replacing a test to avoid iOS memory pressure.
     const prior=canvas._framePlayback;
-    if(prior){prior.stop();canvas._framePlayback=null;}
+    if(prior)prior.stop();
     const controls=document.createElement('div');
-    controls.style.cssText='display:flex;gap:8px;margin:8px 0';
+    controls.style.cssText='display:flex;gap:8px;margin:8px 0;flex-wrap:wrap';
     const play=document.createElement('button');
-    play.type='button';play.textContent='▶ ANIMA FOTOGRAMMI';
+    play.type='button';play.textContent='▶ RIPRODUCI SEQUENZA 30 FPS';
     play.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:#30263f;color:white';
     const stop=document.createElement('button');
     stop.type='button';stop.textContent='■ FERMA';
     stop.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:transparent;color:white';
     const playbackNote=document.createElement('p');
     playbackNote.style.cssText='font-size:12px;color:#c6bccc';
-    playbackNote.textContent='Animazione sperimentale dei fotogrammi campionati, senza audio.';
+    playbackNote.textContent='Anteprima silenziosa di '+(pictures.length-warmup)+' fotogrammi a 30 fps; primi '+warmup+' esclusi solo dalla riproduzione perché disturbati. Nessun filtro verde applicato.';
     controls.append(play,stop);
     grid.insertAdjacentElement('afterend',controls);
     controls.insertAdjacentElement('afterend',playbackNote);
-    let timer=null,position=0;
-    const thumbnails=Array.from(grid.querySelectorAll('canvas'));
-    const draw=()=>{
-      const image=thumbnails[position%thumbnails.length];
-      if(image)canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
-      position++;
-      if(position>=thumbnails.length)halt();
-    };
+    let timer=null,position=warmup;
     const halt=()=>{if(timer!==null){clearInterval(timer);timer=null;}play.disabled=false;};
-    const previousStop=canvas._framePlayback?.stop;
     canvas._framePlayback={stop:()=>{halt();controls.remove();playbackNote.remove();}};
-    play.onclick=()=>{halt();position=0;play.disabled=true;draw();if(position<thumbnails.length)timer=setInterval(draw,500);};
+    const draw=()=>{
+      if(position>=pictures.length){halt();return;}
+      context.drawImage(pictures[position++],0,0,canvas.width,canvas.height);
+    };
+    play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
-    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Le righe verdi sono artefatti; confronta anche il decoder alternativo.';
+    status.textContent='PES ('+acceleration+'): '+selected.length+' access unit, '+decoded+' fotogrammi decodificati. Anteprima a 30 fps dopo '+warmup+' fotogrammi iniziali; gli artefatti residui non sono stati corretti.';
   }finally{
-    for(const frame of retained.values())frame.close();
     if(decoder.state!=='closed')decoder.close();
   }
 }
