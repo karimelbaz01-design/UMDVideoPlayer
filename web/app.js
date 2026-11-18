@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v39 · 30fps frame preview';
+const FRAME_INSPECTOR_VERSION='UMD v40 · visible live preview';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -849,8 +849,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const decoder=new VideoDecoder({
     output(frame){
       const picture=document.createElement('canvas');
-      picture.width=360;picture.height=240;
-      picture.getContext('2d').drawImage(frame,0,0,360,240);
+      picture.width=frame.displayWidth;picture.height=frame.displayHeight;
+      picture.getContext('2d').drawImage(frame,0,0);
       pictures.push(picture);decoded++;
       frame.close();
     },
@@ -875,7 +875,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     // The green startup is an actual decoding artifact, not a display filter.
     // Start preview after warm-up; preserve full frames for diagnostic thumbnails.
     const warmup=Math.min(15,Math.max(0,pictures.length-1));
-    canvas.width=360;canvas.height=240;
+    canvas.width=pictures[warmup].width;canvas.height=pictures[warmup].height;
     const context=canvas.getContext('2d');
     context.drawImage(pictures[warmup],0,0);
     const oldGrid=canvas.parentElement.querySelector('[data-frame-movie-samples]');
@@ -910,15 +910,23 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     const playbackNote=document.createElement('p');
     playbackNote.style.cssText='font-size:12px;color:#c6bccc';
     playbackNote.textContent='Anteprima silenziosa di '+(pictures.length-warmup)+' fotogrammi a 30 fps; primi '+warmup+' esclusi solo dalla riproduzione perché disturbati. Nessun filtro verde applicato.';
+    const live=document.createElement('canvas');
+    live.width=canvas.width;live.height=canvas.height;
+    live.style.cssText='display:block;width:100%;max-width:520px;height:auto;background:#000;border-radius:10px;margin:10px 0';
+    live.getContext('2d').drawImage(pictures[warmup],0,0);
     controls.append(play,stop);
     grid.insertAdjacentElement('afterend',controls);
-    controls.insertAdjacentElement('afterend',playbackNote);
+    controls.insertAdjacentElement('afterend',live);
+    live.insertAdjacentElement('afterend',playbackNote);
     let timer=null,position=warmup;
     const halt=()=>{if(timer!==null){clearInterval(timer);timer=null;}play.disabled=false;};
-    canvas._framePlayback={stop:()=>{halt();controls.remove();playbackNote.remove();}};
+    canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
     const draw=()=>{
       if(position>=pictures.length){halt();return;}
-      context.drawImage(pictures[position++],0,0,canvas.width,canvas.height);
+      const picture=pictures[position++];
+      context.drawImage(picture,0,0,canvas.width,canvas.height);
+      live.getContext('2d').drawImage(picture,0,0,live.width,live.height);
+      playbackNote.textContent='Riproduzione: fotogramma '+position+' / '+pictures.length+' · anteprima silenziosa.';
     };
     play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
     stop.onclick=halt;
