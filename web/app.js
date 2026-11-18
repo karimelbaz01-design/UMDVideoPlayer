@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v10 · PES demux probe';
+const FRAME_INSPECTOR_VERSION='UMD v11 · Annex-B assembly';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -221,6 +221,37 @@ isoPicker.onchange=async e=>{
             umdDetails.push('Demux PES sperimentale (256 KiB): '+demux.packets+' pacchetti; payload video='+demux.videoBytes+' byte; privato='+demux.privateBytes+' byte; audio='+demux.audioBytes+' byte; troncati='+demux.truncated);
             umdDetails.push('Firme NAL H.264 nei payload video: '+(demux.nalCount?Object.entries(demux.nalTypes).map(([type,n])=>type+'='+n).join(', '):'nessuna individuata nel campione'));
             umdDetails.push('Limiti: nessun video estratto o riproducibile; PES a lunghezza zero e NAL su confini di pacchetto richiedono un parser completo.');
+
+            // Join video PES payloads in stream order before parsing Annex-B boundaries.
+            // The last NAL may be incomplete because the sample ends mid-stream.
+            const joinedSize=videoChunks.reduce((n,c)=>n+c.length,0);
+            const joined=new Uint8Array(joinedSize);
+            let cursor=0;for(const c of videoChunks){joined.set(c,cursor);cursor+=c.length;}
+            const starts=[];
+            for(let k=0;k+3<joined.length;k++){
+              if(joined[k]!==0||joined[k+1]!==0)continue;
+              const prefix=joined[k+2]===1?3:(joined[k+2]===0&&joined[k+3]===1?4:0);
+              if(prefix){starts.push({at:k,header:k+prefix});k+=prefix-1;}
+            }
+            const units={complete:0,partial:starts.length?1:0,sps:0,pps:0,idr:0,sei:0,other:0,invalid:0,maxSize:0};
+            const parameters=[];
+            for(let j=0;j+1<starts.length;j++){
+              const a=starts[j],b=starts[j+1],length=b.at-a.header;
+              if(length<1){units.invalid++;continue;}
+              const header=joined[a.header],type=header&31;
+              if((header&128)!==0||type===0||type>23){units.invalid++;continue;}
+              units.complete++;units.maxSize=Math.max(units.maxSize,length);
+              if(type===7){units.sps++;if(parameters.length<4)parameters.push('SPS '+length+' byte');}
+              else if(type===8){units.pps++;if(parameters.length<4)parameters.push('PPS '+length+' byte');}
+              else if(type===5)units.idr++;
+              else if(type===6)units.sei++;
+              else units.other++;
+            }
+            umdDetails.push('Annex-B ricostruito (campione): '+joinedSize+' byte di payload video concatenati da '+videoChunks.length+' PES; NAL complete='+units.complete+', ultima potenzialmente incompleta='+units.partial+', non valide='+units.invalid);
+            umdDetails.push('NAL delimitate: SPS='+units.sps+', PPS='+units.pps+', IDR='+units.idr+', SEI='+units.sei+', altre='+units.other+'; massima='+units.maxSize+' byte');
+            if(parameters.length)umdDetails.push('Parametri trovati: '+parameters.join('; ')+' (contenuto non ancora interpretato)');
+            umdDetails.push('Verifica necessaria: le NAL possono attraversare PES non inclusi nel campione; nessun frame è ancora decodificato.');
+
 
 
             }
