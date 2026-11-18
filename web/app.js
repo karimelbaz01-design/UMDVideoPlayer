@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v35 · complete H264 access units';
+const FRAME_INSPECTOR_VERSION='UMD v36 · four movie frame samples';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -829,9 +829,15 @@ async function frameDecodeMovieAccessUnits(data,canvas,status){
   const ppsEnd=nals.find(n=>n.at>pps.at)?.at??first.begin;
   const params=new Uint8Array(prefix.length+Math.max(0,ppsEnd-pps.at));
   params.set(prefix);params.set(data.subarray(pps.at,ppsEnd),prefix.length);
-  let decoded=0,decoderError=null,firstFrame=null;
+  let decoded=0,decoderError=null;
+  const retained=new Map();
+  const sampleIndices=new Set([0,14,29,44]);
   const decoder=new VideoDecoder({
-    output(frame){decoded++;if(!firstFrame)firstFrame=frame;else frame.close();},
+    output(frame){
+      const index=decoded++;
+      if(sampleIndices.has(index))retained.set(index,frame);
+      else frame.close();
+    },
     error(err){decoderError=err;}
   });
   try{
@@ -849,12 +855,30 @@ async function frameDecodeMovieAccessUnits(data,canvas,status){
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    if(!firstFrame)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
-    canvas.width=firstFrame.displayWidth;canvas.height=firstFrame.displayHeight;
-    canvas.getContext('2d').drawImage(firstFrame,0,0);
-    status.textContent='PES: '+selected.length+' access unit complete, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Verifica visivamente eventuali artefatti.';
+    if(!retained.size)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    const first=retained.values().next().value;
+    canvas.width=first.displayWidth;canvas.height=first.displayHeight;
+    canvas.getContext('2d').drawImage(first,0,0);
+    const oldGrid=canvas.parentElement.querySelector('[data-frame-movie-samples]');
+    if(oldGrid)oldGrid.remove();
+    const grid=document.createElement('div');
+    grid.dataset.frameMovieSamples='true';
+    grid.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0';
+    for(const [index,frame] of retained){
+      const cell=document.createElement('div');
+      const thumbnail=document.createElement('canvas');
+      thumbnail.width=288;thumbnail.height=192;
+      thumbnail.style.cssText='width:100%;height:auto;background:black;border-radius:8px';
+      thumbnail.getContext('2d').drawImage(frame,0,0,288,192);
+      const caption=document.createElement('p');
+      caption.style.cssText='font-size:12px;margin:3px 0';
+      caption.textContent='Fotogramma '+(index+1)+' / '+decoded;
+      cell.append(thumbnail,caption);grid.appendChild(cell);
+    }
+    canvas.insertAdjacentElement('afterend',grid);
+    status.textContent='PES: '+selected.length+' access unit, '+decoded+' fotogrammi decodificati, '+canvas.width+'×'+canvas.height+'. Confronta le quattro immagini: righe verdi = artefatti, non video corretto.';
   }finally{
-    if(firstFrame)firstFrame.close();
+    for(const frame of retained.values())frame.close();
     if(decoder.state!=='closed')decoder.close();
   }
 }
