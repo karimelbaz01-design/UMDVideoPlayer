@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v21 · PMF inspection';
+const FRAME_INSPECTOR_VERSION='UMD v22 · PMF stream probe';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -179,6 +179,29 @@ isoPicker.onchange=async e=>{
             ? 'Contenitore PSMF riconosciuto. Animazione non ancora decodificata: Safari non riproduce direttamente PMF.'
             : 'Firma PSMF non rilevata. Non è ancora possibile stabilire se questo file contenga una vera animazione.';
           note.style.cssText='font-size:12px;color:#c6bccc';panel.appendChild(note);
+          if(signature==='PSMF'&&pmf.size>=2048){
+            const bytes=new Uint8Array(await file.slice(offset,offset+pmf.size).arrayBuffer());
+            const data=bytes.subarray(2048);
+            const counts={pack:0,system:0,video:0,private:0,audio:0,other:0};
+            const sampleIds=[];
+            for(let k=0;k+6<=data.length;){
+              if(data[k]!==0||data[k+1]!==0||data[k+2]!==1){k++;continue;}
+              const id=data[k+3];
+              if(id===0xba){counts.pack++;k+=4;continue;}
+              if(id===0xbb)counts.system++;
+              else if(id>=0xe0&&id<=0xef)counts.video++;
+              else if(id===0xbd)counts.private++;
+              else if(id>=0xc0&&id<=0xdf)counts.audio++;
+              else counts.other++;
+              if(sampleIds.length<12)sampleIds.push('0x'+id.toString(16)+'@'+k);
+              const size=(data[k+4]<<8)|data[k+5];
+              k+=size>0?Math.max(6,6+size):4;
+            }
+            const streamLine=document.createElement('p');streamLine.style.cssText='font-size:13px;line-height:1.5;overflow-wrap:anywhere';
+            streamLine.textContent='Diagnostica PSMF: header 2048 byte; dati dopo header '+data.length+' byte. Start code rilevati: pack='+counts.pack+', system='+counts.system+', video='+counts.video+', private='+counts.private+', audio='+counts.audio+', altri='+counts.other+'. Esempi: '+sampleIds.join(', ')+'. Conteggio preliminare: non prova la presenza di frame decodificabili.';
+            panel.appendChild(streamLine);
+            umdDetails.push(streamLine.textContent);
+          }
           umdDetails.push('ICON1.PMF: '+pmf.size+' byte; firma '+JSON.stringify(signature)+'; '+(signature==='PSMF'?'header PSMF rilevato':'header PSMF non rilevato')+'; nessun frame decodificato.');
         }else{line.textContent='ICON1.PMF: intervallo non valido o file troppo grande per la diagnostica.';}
       }else umdDetails.push('ICON1.PMF: assente.');
