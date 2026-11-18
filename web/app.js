@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v29 · movie keyframe validation';
+const FRAME_INSPECTOR_VERSION='UMD v30 · movie keyframe search';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -451,6 +451,45 @@ isoPicker.onchange=async e=>{
               catch(err){movieStatus.textContent='Campione non decodificabile: '+err.message+'. È necessario un demux/lettore completo.';}
               finally{movieButton.disabled=false;}
             };
+            const scanButton=document.createElement('button');
+            scanButton.type='button';
+            scanButton.textContent='CERCA PUNTI DI AVVIO NEL FILM';
+            scanButton.style.cssText='display:block;margin-top:10px;padding:12px;border:1px solid #8d79aa;border-radius:10px;background:transparent;color:#eee;font-weight:700;max-width:100%';
+            const scanReport=document.createElement('p');
+            scanReport.style.cssText='font-size:12px;color:#c6bccc;white-space:pre-wrap;overflow-wrap:anywhere';
+            scanButton.onclick=async()=>{
+              scanButton.disabled=true;
+              scanReport.textContent='Ricerca in corso su 16 posizioni del file MPS…';
+              try{
+                const sections=16,windowBytes=524288;
+                const rows=[];
+                for(let index=0;index<sections;index++){
+                  // Sample across the whole movie without reading 1+ GiB into RAM.
+                  const offset=Math.floor((mps.size-windowBytes)*index/Math.max(1,sections-1));
+                  const bytes=new Uint8Array(await file.slice(start+offset,start+offset+windowBytes).arrayBuffer());
+                  const nals={sps:0,pps:0,idr:0,aud:0};
+                  for(let j=0;j+5<bytes.length;j++){
+                    if(bytes[j]!==0||bytes[j+1]!==0)continue;
+                    const p=bytes[j+2]===1?3:(bytes[j+2]===0&&bytes[j+3]===1?4:0);
+                    if(!p)continue;
+                    const h=bytes[j+p],type=h&31;
+                    if(h&128)continue;
+                    if(type===7)nals.sps++;
+                    if(type===8)nals.pps++;
+                    if(type===5)nals.idr++;
+                    if(type===9)nals.aud++;
+                    j+=p;
+                  }
+                  rows.push({percent:Math.round(offset/Math.max(1,mps.size)*100),...nals});
+                  if(index%4===3)scanReport.textContent='Analizzate '+(index+1)+'/'+sections+' posizioni…';
+                  await new Promise(resolve=>setTimeout(resolve,0));
+                }
+                const candidates=rows.filter(r=>r.sps&&r.pps&&r.idr);
+                scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR.\n'+rows.map(r=>r.percent+'%: SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud).join('\n')+'\nATTENZIONE: firme grezze MPEG-PS, non fotogrammi validati. Il test non riproduce ancora il film.';
+              }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
+              finally{scanButton.disabled=false;}
+            };
+            movieTest.append(scanButton,scanReport);
             movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
