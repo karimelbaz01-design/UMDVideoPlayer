@@ -175,6 +175,54 @@ isoPicker.onchange=async e=>{
             umdDetails.push('PTS leggibili='+pes.pts+(pes.firstPTS===null?'':'; primo='+pes.firstPTS+'; ultimo='+pes.lastPTS+' (clock 90 kHz)'));
             umdDetails.push('Avvertenza: validazione parziale di header, non demux completo o prova del codec.');
 
+            // Bounded PES demux probe: honor PES lengths; avoid scanning payload as packet headers.
+            const demux={videoBytes:0,privateBytes:0,audioBytes:0,packets:0,truncated:0,nalTypes:{},nalCount:0};
+            const videoChunks=[];
+            for(let pos=0;pos+9<=sample.length;){
+              if(sample[pos]!==0||sample[pos+1]!==0||sample[pos+2]!==1){pos++;continue;}
+              const id=sample[pos+3];
+              if(id===0xba){
+                if(pos+14>sample.length)break;
+                const stuffing=sample[pos+13]&7;
+                pos+=14+stuffing;continue;
+              }
+              if(id===0xb9){pos+=4;continue;}
+              if(id===0xbb||id===0xbc||id===0xbe||id===0xbf){
+                if(pos+6>sample.length)break;
+                pos+=6+((sample[pos+4]<<8)|sample[pos+5]);continue;
+              }
+              if(!((id>=0xe0&&id<=0xef)||(id>=0xc0&&id<=0xdf)||id===0xbd)){pos+=4;continue;}
+              const pesLen=(sample[pos+4]<<8)|sample[pos+5],hdr=sample[pos+8];
+              const dataStart=pos+9+hdr,packetEnd=pesLen?pos+6+pesLen:sample.length;
+              if((sample[pos+6]&0xc0)!==0x80||dataStart>packetEnd){pos+=4;continue;}
+              const end=Math.min(packetEnd,sample.length);
+              const bytes=Math.max(0,end-dataStart);
+              if(id>=0xe0){demux.videoBytes+=bytes;if(bytes&&videoChunks.length<24)videoChunks.push(sample.subarray(dataStart,Math.min(end,dataStart+8192)));}
+              else if(id===0xbd)demux.privateBytes+=bytes;
+              else demux.audioBytes+=bytes;
+              demux.packets++;
+              if(packetEnd>sample.length){demux.truncated++;break;}
+              if(!pesLen)break;
+              pos=packetEnd;
+            }
+            // H.264 Annex-B NAL types in video PES payloads; detection only, no decode.
+            for(const chunk of videoChunks){
+              for(let k=0;k+4<chunk.length;k++){
+                if(chunk[k]!==0||chunk[k+1]!==0)continue;
+                const offset=chunk[k+2]===1?3:(chunk[k+2]===0&&chunk[k+3]===1?4:0);
+                if(!offset||k+offset>=chunk.length)continue;
+                const h=chunk[k+offset],type=h&31;
+                if((h&128)===0&&type>=1&&type<=23){
+                  demux.nalTypes[type]=(demux.nalTypes[type]||0)+1;demux.nalCount++;
+                }
+                k+=offset;
+              }
+            }
+            umdDetails.push('Demux PES sperimentale (256 KiB): '+demux.packets+' pacchetti; payload video='+demux.videoBytes+' byte; privato='+demux.privateBytes+' byte; audio='+demux.audioBytes+' byte; troncati='+demux.truncated);
+            umdDetails.push('Firme NAL H.264 nei payload video: '+(demux.nalCount?Object.entries(demux.nalTypes).map(([type,n])=>type+'='+n).join(', '):'nessuna individuata nel campione'));
+            umdDetails.push('Limiti: nessun video estratto o riproducibile; PES a lunghezza zero e NAL su confini di pacchetto richiedono un parser completo.');
+
+
             }
           }else{umdDetails.push('MPEG-PS: nessun file .MPS riconosciuto nella cartella STREAM.');}
         }
