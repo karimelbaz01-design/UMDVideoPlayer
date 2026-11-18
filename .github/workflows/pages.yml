@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Deploy UMD v8 MPS detection fix
+# Deploy FRAME UMD v9 PES PTS probe
 on:
   push:
     branches: [main]
