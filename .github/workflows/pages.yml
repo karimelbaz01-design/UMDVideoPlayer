@@ -1,5 +1,5 @@
 name: Publish FRAME Web
-# Redeploy UMD MPEG-PS probe with Safari cache bust
+# Deploy explicit UMD v6 network-first cache fix
 on:
   push:
     branches: [main]
