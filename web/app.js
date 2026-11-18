@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v45 · validated IDR sample selection';
+const FRAME_INSPECTOR_VERSION='UMD v46 · wider GOP scan windows';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -511,9 +511,9 @@ isoPicker.onchange=async e=>{
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
               frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';alternateButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
-              scanReport.textContent='Ricerca in corso su 16 posizioni del file MPS…';
+              scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
               try{
-                const sections=16,windowBytes=524288;
+                const sections=16,windowBytes=2097152;
                 const rows=[];
                 for(let index=0;index<sections;index++){
                   // Sample across the whole movie without reading 1+ GiB into RAM.
