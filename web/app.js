@@ -555,10 +555,6 @@ isoPicker.onchange=async e=>{
               verifiedVideo.onloadedmetadata=()=>{verifiedStatus.textContent='File locale pronto: '+selected.name+' · '+verifiedVideo.duration.toFixed(2)+' s. Premi Play.';};
               verifiedVideo.load();
             };
-            nativeVideo.insertAdjacentElement('afterend',verifiedLabel);
-            verifiedLabel.insertAdjacentElement('afterend',verifiedPicker);
-            verifiedPicker.insertAdjacentElement('afterend',verifiedVideo);
-            verifiedVideo.insertAdjacentElement('afterend',verifiedStatus);
             const mp4Export=document.createElement('button');
             mp4Export.type='button';
             mp4Export.textContent='ESPORTA MP4 GENERATO (per analisi)';
@@ -772,7 +768,7 @@ isoPicker.onchange=async e=>{
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
