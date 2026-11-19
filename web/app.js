@@ -1371,7 +1371,21 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   });
   try{
     decoder.configure(config);
-    const selected=units.slice(firstKey,firstKey+90);
+    // UMD Video often stores interlaced top/bottom fields as separate AUD
+    // units. Feed a pair as one coded picture when both fields are present.
+    // This is an experimental decoder path; the original bytes are preserved.
+    const rawFields=units.slice(firstKey,firstKey+90);
+    const selected=[];
+    for(let k=0;k<rawFields.length;k+=2){
+      const firstField=rawFields[k],secondField=rawFields[k+1];
+      if(!secondField){selected.push(firstField);break;}
+      selected.push({
+        begin:firstField.begin,end:secondField.end,
+        members:[...firstField.members,...secondField.members],
+        hasIDR:firstField.hasIDR||secondField.hasIDR,
+        pictureType:firstField.pictureType
+      });
+    }
     // In decode order, B pictures typically follow their future reference.
     // Build a presentation-order timestamp map for the common closed GOP
     // pattern: I, P, B, P, B... . Unknown patterns retain decode order.
@@ -1533,7 +1547,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     };
     play.onclick=()=>{halt();lastIndex=-1;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
     stop.onclick=halt;
-    status.textContent='Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
