@@ -647,13 +647,29 @@ isoPicker.onchange=async e=>{
               }catch(e){frameReport.textContent='Esportazione MP4 fallita: '+e.message;}
             };
             nativeButton.onclick=()=>{
+              frameCandidate=movieSamples[Number(samplePicker.value)]?.data||frameCandidate;
               if(!frameCandidate)return;
               try{
                 if(nativeUrl)URL.revokeObjectURL(nativeUrl);
                 nativeUrl=URL.createObjectURL(frameNativeMp4(frameCandidate));
                 nativeVideo.src=nativeUrl;nativeVideo.style.display='block';
                 frameReport.textContent='Test nativo MP4 con coppie di campi interlacciati, senza ricodifica e senza audio: premi Play. Non è un file progressivo ricodificato; potrebbe essere incompatibile con Safari.';
-                nativeVideo.onerror=()=>{frameReport.textContent='Safari non riesce ad aprire il MP4 generato (errore media '+(nativeVideo.error?.code??'?')+'). Non è una riproduzione valida.';};
+                nativeVideo.onerror=async()=>{
+                  const mediaCode=nativeVideo.error?.code??'?';
+                  frameReport.textContent='MP4 rifiutato da Safari (errore '+mediaCode+'). Provo il decoder diretto WebCodecs, senza scaricare il file…';
+                  nativeVideo.style.display='none';
+                  if(typeof VideoDecoder==='undefined'){
+                    frameReport.textContent+=' WebCodecs non disponibile: serve una ricodifica H.264 progressiva.';
+                    return;
+                  }
+                  try{
+                    frameCanvas.style.display='block';
+                    await frameDecodeMovieAccessUnits(frameCandidate,frameCanvas,frameReport,'prefer-software',movieSamples[Number(samplePicker.value)]?.timing||[]);
+                    frameReport.textContent+=' Il contenitore MP4 resta incompatibile: questa è una riproduzione di fotogrammi su canvas, senza audio.';
+                  }catch(err){
+                    frameReport.textContent='MP4 non supportato (errore '+mediaCode+'); anche il decoder WebCodecs non riesce a ricostruire il campione: '+(err?.message||err);
+                  }
+                };
                 nativeVideo.onloadedmetadata=()=>{frameReport.textContent='Safari ha caricato il campione MP4 ('+nativeVideo.duration.toFixed(2)+' s). Premi Play: la lettura dei metadati non garantisce che il video sia decodificabile.';};
                 nativeVideo.onplaying=()=>{frameReport.textContent='Riproduzione avviata su Safari. Controlla fluidità e immagini: il test è senza audio.';};
                 nativeVideo.onwaiting=()=>{frameReport.textContent='Safari è in attesa di dati o decodifica: possibile blocco del campione.';};
