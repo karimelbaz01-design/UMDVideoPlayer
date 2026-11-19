@@ -1521,7 +1521,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     const fps=30000/1001;
     const frameMs=1000/fps;
     const count=pictures.length-warmup;
-    let raf=null,started=0,lastIndex=-1,dropped=0,loops=0;
+    let raf=null,started=0,lastIndex=-1,lastStep=-1,dropped=0,loops=0;
     const halt=()=>{if(raf!==null)cancelAnimationFrame(raf);raf=null;play.disabled=false;};
     const drawIndex=index=>{
       const picture=pictures[index];
@@ -1538,14 +1538,13 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       loops=Math.floor(step/count);
       if(index!==lastIndex){
         if(lastIndex>=warmup){
-          const priorStep=Math.floor((elapsed-frameMs)/frameMs);
-          if(step>priorStep+1)dropped+=step-priorStep-1;
+          if(lastStep>=0&&step>lastStep+1)dropped+=step-lastStep-1;
         }
-        drawIndex(index);lastIndex=index;
+        drawIndex(index);lastIndex=index;lastStep=step;
       }
       raf=requestAnimationFrame(tick);
     };
-    play.onclick=()=>{halt();lastIndex=-1;dropped=0;loops=0;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
+    play.onclick=()=>{halt();lastIndex=-1;lastStep=-1;dropped=0;loops=0;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
     stop.onclick=()=>{halt();playbackNote.textContent='Anteprima fermata · '+loops+' cicli · '+dropped+' fotogrammi saltati.';};
     canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
     playbackNote.textContent='Anteprima in ciclo a 29,97 fps stimati, senza audio. Premi RIPRODUCI per verificare il movimento.';
