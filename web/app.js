@@ -1394,7 +1394,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const decoder=new VideoDecoder({
     output(frame){
       const picture=document.createElement('canvas');
-      const scale=targetFrames>45?Math.min(1,240/frame.displayWidth):1;
+      // Keep more detail than v76's 240px test, while bounding iPhone RAM.
+      const scale=targetFrames>45?Math.min(1,360/frame.displayWidth):1;
       picture.width=Math.max(1,Math.round(frame.displayWidth*scale));picture.height=Math.max(1,Math.round(frame.displayHeight*scale));
       picture.getContext('2d').drawImage(frame,0,0,picture.width,picture.height);
       // WebCodecs may output frames in presentation order, not submission
@@ -1457,7 +1458,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
         const combined=new Uint8Array(params.length+chunk.length);
         combined.set(params);combined.set(chunk,params.length);chunk=combined;
       }
-      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(presentationRank[i]??i)*33367,data:chunk}));
+      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(targetFrames>45?i:(presentationRank[i]??i))*33367,data:chunk}));
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
@@ -1465,7 +1466,10 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     // Keep decoder output order and report whether it differs from
     // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
     const outputReorders=pictures.reduce((n,p,i)=>n+(i>0&&p.timestamp<pictures[i-1].timestamp?1:0),0);
-    pictures.sort((a,b)=>a.timestamp-b.timestamp);
+    // Long preview: WebCodecs emits decoded pictures in presentation order.
+    // Do not sort them by fabricated decode-order timestamps: that scrambled
+    // B-frame motion in v76. Short, already validated v75 preview is unchanged.
+    if(targetFrames<=45)pictures.sort((a,b)=>a.timestamp-b.timestamp);
     const timestamps=pictures.map(p=>p.timestamp);
     const uniqueTimestamps=new Set(timestamps).size;
     for(let i=0;i<pictures.length;i++)pictures[i]=pictures[i].canvas;
@@ -1553,7 +1557,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     // preview. 30000/1001 is provisional, not a measured original UMD PTS.
     // Keep decoded frames cached and loop them without re-decoding or
     // accumulating setInterval drift. Do not redraw twice per display tick.
-    const fps=30000/1001;
+    const fps=30000/1001; // Estimated clock until true per-picture UMD PTS are mapped
     const frameMs=1000/fps;
     const count=pictures.length-warmup;
     let raf=null,started=0,lastIndex=-1,lastStep=-1,dropped=0,loops=0;
@@ -1588,7 +1592,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     stop.onclick=()=>{halt();playbackNote.textContent='Anteprima fermata · '+loops+' cicli · '+dropped+' fotogrammi saltati.';};
     canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
     playbackNote.textContent='Anteprima singola a 29,97 fps stimati, senza audio. I campioni disponibili non sono consecutivi.';
-    status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione; test lungo mantiene l'ordine di presentazione emesso dal decoder. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
