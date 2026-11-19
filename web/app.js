@@ -1404,6 +1404,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   debugExport.dataset.frameH264Export='true';
   canvas.insertAdjacentElement('afterend',debugExport);
   let decoded=0,decoderError=null;
+  let lastOutputTimestamp=null,decoderFailureAt=null,submittedAtError=null;
+  let submitted=0;
   // Retain downscaled canvases, not VideoFrame objects, to limit iPhone memory.
   const pictures=[];
   const decoder=new VideoDecoder({
@@ -1416,9 +1418,10 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       // WebCodecs may output frames in presentation order, not submission
       // order. Preserve timestamps for diagnostics and playback sorting.
       pictures.push({canvas:picture,timestamp:frame.timestamp});decoded++;
+      lastOutputTimestamp=frame.timestamp;
       frame.close();
     },
-    error(err){decoderError=err;}
+    error(err){decoderError=err;submittedAtError=submitted;decoderFailureAt=lastOutputTimestamp;}
   });
   try{
     decoder.configure(config);
@@ -1456,7 +1459,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     presentation.forEach((decodeIndex,rank)=>{presentationRank[decodeIndex]=rank;});
     const bCount=selected.filter(u=>u.pictureType==='B').length;
     const idrCount=selected.filter(u=>u.hasIDR).length;
-    let submitted=0,firstDecoderFailure=-1;
+    let firstDecoderFailure=-1;
+    const idrPositions=selected.map((u,i)=>u.hasIDR?i:null).filter(i=>i!==null);
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
       const unit=selected[i];
@@ -1482,7 +1486,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    const decodeDiagnostic='Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+', fotogrammi usciti '+decoded+', errore decoder '+(decoderError?.message||'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
+    const decodeDiagnostic='Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+' (posizioni '+idrPositions.slice(0,24).join(',')+'), fotogrammi usciti '+decoded+', ultimo timestamp emesso '+(lastOutputTimestamp===null?'nessuno':lastOutputTimestamp)+', errore decoder '+(decoderError?.message||'nessuno')+', invii al momento dell’errore '+(submittedAtError??'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
     if(!pictures.length)throw Error(decodeDiagnostic+(decoderError?.message||'Nessun fotogramma prodotto dal decoder.'));
     // Keep decoder output order and report whether it differs from
     // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
