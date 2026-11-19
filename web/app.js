@@ -646,6 +646,23 @@ isoPicker.onchange=async e=>{
                 setTimeout(()=>URL.revokeObjectURL(url),60000);
               }catch(e){frameReport.textContent='Esportazione MP4 fallita: '+e.message;}
             };
+            // v74: move between independently decoded ISO samples without
+            // pretending distant scan windows form continuous movie playback.
+            const nextSampleButton=document.createElement('button');
+            nextSampleButton.type='button';
+            nextSampleButton.textContent='▶ CAMPIONE SUCCESSIVO';
+            nextSampleButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
+            nextSampleButton.onclick=()=>{
+              const next=Number(samplePicker.value)+1;
+              if(next>=movieSamples.length){
+                frameReport.textContent='Ultimo campione disponibile. La scansione attuale cerca punti separati nella ISO, non segmenti consecutivi.';
+                return;
+              }
+              samplePicker.value=String(next);
+              frameCandidate=movieSamples[next].data;
+              frameReport.textContent='Campione '+(next+1)+'/'+movieSamples.length+' (punto '+movieSamples[next].percent+'%). I punti non sono consecutivi nel film.';
+              nativeButton.click();
+            };
             nativeButton.onclick=()=>{
               frameCandidate=movieSamples[Number(samplePicker.value)]?.data||frameCandidate;
               if(!frameCandidate)return;
@@ -707,7 +724,7 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';nextSampleButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
               try{
                 const sections=16,windowBytes=2097152;
@@ -859,14 +876,14 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='none';nativeButton.style.display='block';wasmButton.style.display='none';mp4Export.style.display='block';alternateButton.style.display='none';nalCompareButton.style.display='none';
+                  frameButton.style.display='none';nativeButton.style.display='block';nextSampleButton.style.display=movieSamples.length>1?'block':'none';wasmButton.style.display='none';mp4Export.style.display='block';alternateButton.style.display='none';nalCompareButton.style.display='none';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,wasmButton,wasmVideo,wasmNote,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nextSampleButton,nativeVideo,wasmButton,wasmVideo,wasmNote,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
@@ -1534,8 +1551,13 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(document.hidden){halt();playbackNote.textContent='Anteprima in pausa: scheda non visibile.';return;}
       const elapsed=Math.max(0,now-started);
       const step=Math.floor(elapsed/frameMs);
-      const index=warmup+(step%count);
-      loops=Math.floor(step/count);
+      if(step>=count){
+        halt();
+        playbackNote.textContent='Campione terminato ('+count+' fotogrammi). Per continuare scegli un altro punto ISO: non è ancora riproduzione consecutiva.';
+        return;
+      }
+      const index=warmup+step;
+      loops=0;
       if(index!==lastIndex){
         if(lastIndex>=warmup){
           if(lastStep>=0&&step>lastStep+1)dropped+=step-lastStep-1;
@@ -1547,7 +1569,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     play.onclick=()=>{halt();lastIndex=-1;lastStep=-1;dropped=0;loops=0;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
     stop.onclick=()=>{halt();playbackNote.textContent='Anteprima fermata · '+loops+' cicli · '+dropped+' fotogrammi saltati.';};
     canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
-    playbackNote.textContent='Anteprima in ciclo a 29,97 fps stimati, senza audio. Premi RIPRODUCI per verificare il movimento.';
+    playbackNote.textContent='Anteprima singola a 29,97 fps stimati, senza audio. I campioni disponibili non sono consecutivi.';
     status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
