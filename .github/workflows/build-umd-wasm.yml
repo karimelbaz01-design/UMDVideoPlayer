@@ -1,6 +1,12 @@
 name: Build experimental UMD WASM
 on:
   workflow_dispatch:
+  push:
+    branches: [android/frame-port]
+    paths:
+      - 'umd-next/**'
+      - 'web/umd-next/**'
+      - '.github/workflows/build-umd-wasm.yml'
 permissions:
   contents: read
 jobs:
