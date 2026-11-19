@@ -648,6 +648,22 @@ isoPicker.onchange=async e=>{
             };
             // v74: move between independently decoded ISO samples without
             // pretending distant scan windows form continuous movie playback.
+            const longTestButton=document.createElement('button');
+            longTestButton.type='button';
+            longTestButton.textContent='▶ TEST 30 SECONDI (SPERIMENTALE)';
+            longTestButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
+            longTestButton.onclick=async()=>{
+              if(!movieSamples.length)return;
+              longTestButton.disabled=true;
+              nativeVideo.pause();nativeVideo.style.display='none';
+              frameCanvas.style.display='block';
+              frameReport.textContent='Decodifica sperimentale fino a 900 fotogrammi dal primo punto ISO. Su iPhone potrebbe richiedere tempo e memoria…';
+              try{
+                await frameDecodeMovieAccessUnits(movieSamples[0].data,frameCanvas,frameReport,'prefer-software',movieSamples[0].timing||[],'original',900);
+                frameReport.textContent+=' Test lungo: durata effettiva dipendente dai fotogrammi decodificati; non è ancora un player continuo completo.';
+              }catch(err){frameReport.textContent='Test lungo non riuscito: '+(err?.message||err);}
+              finally{longTestButton.disabled=false;}
+            };
             const nextSampleButton=document.createElement('button');
             nextSampleButton.type='button';
             nextSampleButton.textContent='▶ CAMPIONE SUCCESSIVO';
@@ -724,15 +740,16 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';nextSampleButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
-              scanReport.textContent='Ricerca sull’intero film (16 posizioni, fino alla fine) con finestre da 2 MiB: cerco access unit complete…';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';nextSampleButton.style.display='none';longTestButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              scanReport.textContent='Ricerca sull’intero film: primo punto fino a 32 MiB per test lungo; altri 15 punti da 2 MiB…';
               try{
                 const sections=16,windowBytes=2097152;
                 const rows=[];
                 for(let index=0;index<sections;index++){
                   // Sample across the whole movie without reading 1+ GiB into RAM.
-                  const offset=Math.floor((mps.size-windowBytes)*index/Math.max(1,sections-1));
-                  const bytes=new Uint8Array(await file.slice(start+offset,start+offset+windowBytes).arrayBuffer());
+                  const sampleBytes=index===0?33554432:windowBytes;
+                  const offset=Math.floor((mps.size-sampleBytes)*index/Math.max(1,sections-1));
+                  const bytes=new Uint8Array(await file.slice(start+offset,start+offset+sampleBytes).arrayBuffer());
                   // Parse MPEG-PS packet boundaries before inspecting H.264.
                   // A window may start in the middle of a packet; resynchronize
                   // at a plausible pack header and never count raw MPS bytes.
@@ -876,14 +893,14 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='none';nativeButton.style.display='block';nextSampleButton.style.display=movieSamples.length>1?'block':'none';wasmButton.style.display='none';mp4Export.style.display='block';alternateButton.style.display='none';nalCompareButton.style.display='none';
+                  frameButton.style.display='none';nativeButton.style.display='block';nextSampleButton.style.display=movieSamples.length>1?'block':'none';longTestButton.style.display=movieSamples.length?'block':'none';wasmButton.style.display='none';mp4Export.style.display='block';alternateButton.style.display='none';nalCompareButton.style.display='none';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nextSampleButton,nativeVideo,wasmButton,wasmVideo,wasmNote,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,longTestButton,nextSampleButton,nativeVideo,wasmButton,wasmVideo,wasmNote,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
@@ -1210,7 +1227,7 @@ function frameNativeMp4(data){
   const moovFinal=box('moov',mvhd,box('trak',tkhd,box('mdia',mdhd,hdlr,box('minf',vmhd,dinf,stblFinal))));
   return new Blob([ftyp,moovFinal,mdat],{type:'video/mp4'});
 }
-async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original'){
+async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original',targetFrames=45){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs non disponibile in questo browser.');
   const nals=[];
@@ -1377,8 +1394,9 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   const decoder=new VideoDecoder({
     output(frame){
       const picture=document.createElement('canvas');
-      picture.width=frame.displayWidth;picture.height=frame.displayHeight;
-      picture.getContext('2d').drawImage(frame,0,0);
+      const scale=targetFrames>45?Math.min(1,240/frame.displayWidth):1;
+      picture.width=Math.max(1,Math.round(frame.displayWidth*scale));picture.height=Math.max(1,Math.round(frame.displayHeight*scale));
+      picture.getContext('2d').drawImage(frame,0,0,picture.width,picture.height);
       // WebCodecs may output frames in presentation order, not submission
       // order. Preserve timestamps for diagnostics and playback sorting.
       pictures.push({canvas:picture,timestamp:frame.timestamp});decoded++;
@@ -1391,7 +1409,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     // UMD Video often stores interlaced top/bottom fields as separate AUD
     // units. Feed a pair as one coded picture when both fields are present.
     // This is an experimental decoder path; the original bytes are preserved.
-    const rawFields=units.slice(firstKey,firstKey+90);
+    const rawFields=units.slice(firstKey,firstKey+Math.min(1800,targetFrames*2));
     const selected=[];
     for(let k=0;k<rawFields.length;k+=2){
       const firstField=rawFields[k],secondField=rawFields[k+1];
