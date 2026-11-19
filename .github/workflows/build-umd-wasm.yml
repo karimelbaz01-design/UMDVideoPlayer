@@ -1,0 +1,50 @@
+name: Build experimental UMD WASM
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.74'
+      - name: Fetch FFmpeg source
+        run: |
+          curl -fL --retry 3 https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz -o ffmpeg.tar.xz
+          tar xf ffmpeg.tar.xz
+      - name: Configure minimal FFmpeg
+        working-directory: ffmpeg-7.1.1
+        run: |
+          emconfigure ./configure --prefix="$GITHUB_WORKSPACE/umd-next/ffmpeg-wasm" \
+            --cc=emcc --cxx=em++ --ar=emar --ranlib=emranlib \
+            --nm=emnm --strip=emstrip --target-os=none --arch=wasm32 \
+            --enable-cross-compile --disable-all --disable-autodetect \
+            --disable-programs --disable-doc --disable-network --disable-pthreads \
+            --enable-avformat --enable-avcodec --enable-avutil --enable-swresample \
+            --enable-protocol=file --enable-demuxer=mpegps \
+            --enable-parser=h264 --enable-decoder=atrac3p \
+            --enable-small --disable-asm
+      - name: Compile FFmpeg
+        working-directory: ffmpeg-7.1.1
+        run: emmake make -j2 && emmake make install
+      - name: Link UMD WASM
+        run: |
+          mkdir -p web/umd-next
+          em++ umd-next/core/iso_reader.cpp umd-next/core/umd_demuxer.cpp umd-next/core/umd_bridge.cpp \
+            -Iumd-next/ffmpeg-wasm/include -Lumd-next/ffmpeg-wasm/lib \
+            -lavformat -lavcodec -lswresample -lavutil -lworkerfs.js \
+            -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 \
+            -s EXPORT_NAME=createUmdModule \
+            -s EXPORTED_FUNCTIONS='["_umd_open_path","_umd_step","_umd_get_packet_data","_umd_get_packet_size","_umd_get_packet_pts","_umd_is_keyframe","_umd_seek","_umd_get_width","_umd_get_height","_umd_close"]' \
+            -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS","WORKERFS","HEAPU8"]' \
+            -O2 -o web/umd-next/umd_core.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: umd-wasm-experimental
+          path: |
+            web/umd-next/umd_core.js
+            web/umd-next/umd_core.wasm
