@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 concurrency:
@@ -21,6 +22,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Download compiled UMD WebAssembly engine
+        uses: actions/download-artifact@v4
+        with:
+          name: umd-wasm-experimental
+          run-id: 44602101160
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: web/umd-next
+      - name: Verify compiled engine
+        run: |
+          test -s web/umd-next/umd_core.js
+          test -s web/umd-next/umd_core.wasm
+          ls -lh web/umd-next/umd_core.*
       - name: Prepare static site
         run: |
           mkdir -p _site
