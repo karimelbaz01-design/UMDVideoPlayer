@@ -3,6 +3,7 @@ importScripts('umd_core.js');
 
 let Module = null;
 let isRunning = false;
+let halted = false;
 let pumpTimer = null;
 let outstandingPackets = 0;
 const MAX_IN_FLIGHT = 8;
@@ -24,6 +25,7 @@ self.onmessage = async (e) => {
   if (msg.type === 'open') {
     if (!Module) return;
     stopPump();
+    halted = false;
     outstandingPackets = 0;
 
     try {
@@ -48,12 +50,16 @@ self.onmessage = async (e) => {
     } catch (err) {
       postMessage({ type: 'error', message: err.message || String(err) });
     }
+  } else if (msg.type === 'halt') {
+    halted = true;
+    stopPump();
+    outstandingPackets = 0;
   } else if (msg.type === 'packet-consumed') {
     outstandingPackets = Math.max(0, outstandingPackets - 1);
   } else if (msg.type === 'pause') {
     stopPump();
   } else if (msg.type === 'resume') {
-    startPump();
+    if (!halted) startPump();
   } else if (msg.type === 'seek') {
     if (!Module) return;
     const wasRunning = isRunning;
@@ -65,7 +71,7 @@ self.onmessage = async (e) => {
 };
 
 function startPump() {
-  if (isRunning) return;
+  if (isRunning || halted) return;
   isRunning = true;
   pumpBatch();
 }
@@ -79,7 +85,7 @@ function stopPump() {
 }
 
 function pumpBatch() {
-  if (!isRunning || !Module) return;
+  if (!isRunning || !Module || halted) return;
 
   // Estrae piccoli lotti di pacchetti per ciclo evitando di bloccare l'event loop del Worker
   for (let i = 0; i < 4 && outstandingPackets < MAX_IN_FLIGHT; i++) {
