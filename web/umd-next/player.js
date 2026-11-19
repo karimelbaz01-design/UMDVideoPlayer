@@ -11,7 +11,7 @@ const ctx = canvas.getContext('2d');
 const FRAME_VIDEO_H264 = 1;
 const FRAME_AUDIO_PCM = 2;
 
-const worker = new Worker('worker.js');
+const worker = new Worker('worker.js?v=bp-ea69c8b4');
 
 let videoDecoder = null;
 let waitingForKeyFrame = true;
