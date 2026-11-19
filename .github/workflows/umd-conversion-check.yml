@@ -1,0 +1,40 @@
+name: Verify UMD progressive conversion
+on:
+  workflow_dispatch:
+  push:
+    branches: [android/frame-port]
+    paths:
+      - 'tools/convert_umd_mp4_sample.sh'
+      - '.github/workflows/umd-conversion-check.yml'
+jobs:
+  conversion-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check FFmpeg
+        run: |
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Generate synthetic interlaced H264 test input
+        run: |
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'testsrc2=size=720x480:rate=30000/1001:duration=3' \
+            -vf 'format=yuv420p,interlace' -c:v libx264 \
+            -x264-params 'tff=1' -pix_fmt yuv420p -an input_interlaced.mp4
+      - name: Convert to progressive MP4
+        run: bash tools/convert_umd_mp4_sample.sh input_interlaced.mp4 output_progressive.mp4
+      - name: Assert valid progressive video
+        run: |
+          set -euo pipefail
+          test -s output_progressive.mp4
+          field_order="$(ffprobe -v error -select_streams v:0 -show_entries stream=field_order -of default=noprint_wrappers=1:nokey=1 output_progressive.mp4)"
+          echo "Output field order: $field_order"
+          test "$field_order" = progressive
+          ffmpeg -hide_banner -loglevel error -xerror -i output_progressive.mp4 -f null -
+      - name: Upload diagnostic output
+        uses: actions/upload-artifact@v4
+        with:
+          name: progressive-conversion-smoke-test
+          path: output_progressive.mp4
+          retention-days: 3
