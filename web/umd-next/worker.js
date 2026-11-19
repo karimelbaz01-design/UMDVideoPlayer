@@ -4,6 +4,8 @@ importScripts('umd_core.js');
 let Module = null;
 let isRunning = false;
 let pumpTimer = null;
+let outstandingPackets = 0;
+const MAX_IN_FLIGHT = 8;
 
 // Tipi pacchetto allineati con enum FrameType in umd_demuxer.h
 const FRAME_VIDEO_H264 = 1;
@@ -22,6 +24,7 @@ self.onmessage = async (e) => {
   if (msg.type === 'open') {
     if (!Module) return;
     stopPump();
+    outstandingPackets = 0;
 
     try {
       // Crea punto di mount virtuale per leggere la ISO dal disco senza caricarla in RAM
@@ -45,6 +48,8 @@ self.onmessage = async (e) => {
     } catch (err) {
       postMessage({ type: 'error', message: err.message || String(err) });
     }
+  } else if (msg.type === 'packet-consumed') {
+    outstandingPackets = Math.max(0, outstandingPackets - 1);
   } else if (msg.type === 'pause') {
     stopPump();
   } else if (msg.type === 'resume') {
@@ -77,7 +82,7 @@ function pumpBatch() {
   if (!isRunning || !Module) return;
 
   // Estrae piccoli lotti di pacchetti per ciclo evitando di bloccare l'event loop del Worker
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 4 && outstandingPackets < MAX_IN_FLIGHT; i++) {
     const pktType = Module._umd_step();
 
     if (pktType === FRAME_EOF) {
@@ -102,6 +107,7 @@ function pumpBatch() {
       const copy = new Uint8Array(size);
       copy.set(Module.HEAPU8.subarray(ptr, ptr + size));
 
+      outstandingPackets++;
       postMessage(
         {
           type: 'packet',
@@ -115,5 +121,5 @@ function pumpBatch() {
     }
   }
 
-  pumpTimer = setTimeout(pumpBatch, 4);
+  pumpTimer = setTimeout(pumpBatch, outstandingPackets >= MAX_IN_FLIGHT ? 16 : 4);
 }
