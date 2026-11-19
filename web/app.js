@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v65 · progressive MP4 local playback';
+const FRAME_INSPECTOR_VERSION='UMD v66 · timed preview playback';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -1386,7 +1386,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     const controls=document.createElement('div');
     controls.style.cssText='display:flex;gap:8px;margin:8px 0;flex-wrap:wrap';
     const play=document.createElement('button');
-    play.type='button';play.textContent='▶ RIPRODUCI SEQUENZA 30 FPS';
+    play.type='button';play.textContent='▶ RIPRODUCI ANTEPRIMA FLUIDA';
     play.style.cssText='padding:9px;border-radius:8px;border:1px solid #a98bce;background:#30263f;color:white';
     const stop=document.createElement('button');
     stop.type='button';stop.textContent='■ FERMA';
@@ -1402,17 +1402,38 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     grid.insertAdjacentElement('afterend',controls);
     controls.insertAdjacentElement('afterend',live);
     live.insertAdjacentElement('afterend',playbackNote);
-    let timer=null,position=warmup;
-    const halt=()=>{if(timer!==null){clearInterval(timer);timer=null;}play.disabled=false;};
+    // Frame-clock playback: requestAnimationFrame follows the display refresh
+    // rate. Derive the frame index from elapsed time so delayed callbacks do
+    // not accumulate drift (as setInterval did). This improves pacing only;
+    // it does not repair damaged or interlaced decoded pixels.
+    const rateLabel=document.createElement('label');
+    rateLabel.textContent='Velocità anteprima: ';
+    rateLabel.style.cssText='font-size:12px;color:#c6bccc';
+    const ratePicker=document.createElement('select');
+    ratePicker.style.cssText='margin-left:6px;background:#30263f;color:#fff;padding:7px;border:1px solid #a98bce;border-radius:7px';
+    for(const fps of [24,25,30]){
+      const option=document.createElement('option');option.value=String(fps);
+      option.textContent=fps+' fps';option.selected=fps===30;
+      ratePicker.append(option);
+    }
+    rateLabel.append(ratePicker);controls.append(rateLabel);
+    let raf=null,started=0,lastIndex=-1;
+    const halt=()=>{if(raf!==null){cancelAnimationFrame(raf);raf=null;}play.disabled=false;};
     canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
-    const draw=()=>{
-      if(position>=pictures.length){halt();return;}
-      const picture=pictures[position++];
+    const drawIndex=index=>{
+      const picture=pictures[index];
       context.drawImage(picture,0,0,canvas.width,canvas.height);
       live.getContext('2d').drawImage(picture,0,0,live.width,live.height);
-      playbackNote.textContent='Riproduzione: fotogramma '+position+' / '+pictures.length+' · anteprima silenziosa.';
+      playbackNote.textContent='Riproduzione: fotogramma '+(index+1)+' / '+pictures.length+' · '+ratePicker.value+' fps · anteprima silenziosa.';
     };
-    play.onclick=()=>{halt();position=warmup;play.disabled=true;draw();if(position<pictures.length)timer=setInterval(draw,1000/30);};
+    const tick=now=>{
+      const fps=Number(ratePicker.value);
+      const index=Math.min(pictures.length-1,warmup+Math.floor((now-started)*fps/1000));
+      if(index!==lastIndex){drawIndex(index);lastIndex=index;}
+      if(index>=pictures.length-1){halt();return;}
+      raf=requestAnimationFrame(tick);
+    };
+    play.onclick=()=>{halt();lastIndex=-1;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
     stop.onclick=halt;
     status.textContent='Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
