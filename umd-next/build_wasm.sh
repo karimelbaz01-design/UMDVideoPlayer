@@ -12,10 +12,10 @@ set -e
 #   --enable-decoder=h264,atrac3p --prefix=./build-wasm
 # emmake make -j4 && emmake make install
 
-mkdir -p web
+mkdir -p web/umd-next
 
 # 2. Compila il motore C++ insieme a FFmpeg in WebAssembly
-emcc core/iso_reader.cpp core/umd_demuxer.cpp core/umd_bridge.cpp \
+emcc umd-next/core/iso_reader.cpp umd-next/core/umd_demuxer.cpp umd-next/core/umd_bridge.cpp \
   -I./build-wasm/include -L./build-wasm/lib \
   -lavformat -lavcodec -lswresample -lavutil \
   -lworkerfs.js \
@@ -24,6 +24,6 @@ emcc core/iso_reader.cpp core/umd_demuxer.cpp core/umd_bridge.cpp \
   -s EXPORT_NAME="createUmdModule" \
   -s EXPORTED_FUNCTIONS='["_umd_open_path","_umd_step","_umd_get_packet_data","_umd_get_packet_size","_umd_get_packet_pts","_umd_is_keyframe","_umd_seek","_umd_get_width","_umd_get_height","_umd_close"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS","WORKERFS","HEAPU8"]' \
-  -O3 -o web/umd_core.js
+  -O3 -o web/umd-next/umd_core.js
 
-echo "Compilazione completata: web/umd_core.js e web/umd_core.wasm"
+echo "Compilazione completata: web/umd-next/umd_core.js e web/umd-next/umd_core.wasm"
