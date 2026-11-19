@@ -213,10 +213,15 @@ worker.onmessage = (e) => {
   }
 };
 
-isoInput.addEventListener('change', (e) => {
+isoInput.addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   statusText.textContent = `Apertura ${file.name}...`;
+  statusText.textContent = 'Analisi struttura ISO in corso...';
+  const report = await inspectIso9660(file);
+  statusText.textContent = report;
+  console.info('FRAME ISO preflight:', report);
+  if (!report.startsWith('ISO9660 OK')) return;
   worker.postMessage({ type: 'open', file });
 });
 
@@ -245,3 +250,44 @@ seekBar.addEventListener('change', () => {
   const targetSec = Number(seekBar.value);
   worker.postMessage({ type: 'seek', seconds: targetSec });
 });
+
+// Controllo preliminare ISO 9660: non legge l'intero file in memoria.
+async function inspectIso9660(file) {
+  const sector = 2048;
+  const read = async (offset, length) => new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+  const le32 = (b, i) => (b[i] | (b[i+1] << 8) | (b[i+2] << 16) | (b[i+3] << 24)) >>> 0;
+  const pvd = await read(16 * sector, sector);
+  if (pvd.length !== sector || pvd[0] !== 1 || String.fromCharCode(...pvd.slice(1, 6)) !== 'CD001') {
+    return 'Formato ISO 9660 non riconosciuto (firma CD001 assente al settore 16).';
+  }
+  const directory = async (lba, size) => {
+    if (!size || size > 16 * 1024 * 1024 || lba * sector + size > file.size) throw new Error('Directory ISO non valida.');
+    const b = await read(lba * sector, size);
+    const entries = [];
+    for (let p = 0; p < b.length;) {
+      const n = b[p];
+      if (!n) { p = (Math.floor(p / sector) + 1) * sector; continue; }
+      if (n < 34 || p + n > b.length || p + 33 + b[p+32] > p + n) break;
+      const len = b[p+32];
+      let name = String.fromCharCode(...b.slice(p+33, p+33+len)).split(';')[0].toUpperCase();
+      if (!(len === 1 && (b[p+33] === 0 || b[p+33] === 1))) entries.push({name,lba:le32(b,p+2),size:le32(b,p+10),dir:!!(b[p+25]&2)});
+      p += n;
+    }
+    return entries;
+  };
+  try {
+    let entries = await directory(le32(pvd,158), le32(pvd,166));
+    const umd = entries.find(x => x.dir && x.name === 'UMD_VIDEO');
+    if (!umd) return 'ISO valida, ma manca la cartella UMD_VIDEO: potrebbe non essere un disco UMD Video.';
+    entries = await directory(umd.lba, umd.size);
+    const stream = entries.find(x => x.dir && x.name === 'STREAM');
+    if (!stream) return 'Cartella UMD_VIDEO presente, ma STREAM assente.';
+    entries = await directory(stream.lba, stream.size);
+    const movies = entries.filter(x => !x.dir && x.name.endsWith('.MPS'));
+    if (!movies.length) return 'Cartella STREAM presente, ma nessun file .MPS trovato.';
+    const largest = movies.reduce((a,b)=>a.size>b.size?a:b);
+    const start = await read(largest.lba * sector, 32);
+    const hex = Array.from(start.slice(0,12), x => x.toString(16).padStart(2,'0')).join(' ');
+    return 'ISO9660 OK; ' + movies.length + ' file MPS; principale: ' + largest.name + ' (' + Math.round(largest.size/1048576) + ' MiB); primi byte: ' + hex + '.';
+  } catch (err) { return 'Errore nell’analisi delle directory ISO: ' + err.message; }
+}
