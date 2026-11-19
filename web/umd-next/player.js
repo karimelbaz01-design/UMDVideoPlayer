@@ -255,8 +255,25 @@ function startRenderLoop() {
 
         if (framePts <= mediaClock + 0.02) {
           videoQueue.shift();
-          ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-          frame.close();
+          try {
+            // Use the decoded frame's actual display dimensions; never stretch
+            // a differently sized VideoFrame into a fixed 480x272 backing store.
+            const displayWidth = frame.displayWidth || frame.codedWidth;
+            const displayHeight = frame.displayHeight || frame.codedHeight;
+            if (displayWidth > 0 && displayHeight > 0) {
+              if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+                resLabel.textContent = displayWidth + 'x' + displayHeight;
+              }
+              ctx.drawImage(frame, 0, 0, displayWidth, displayHeight);
+            }
+          } catch (err) {
+            lastDecoderError = 'Canvas: ' + (err?.message || String(err));
+            updateDiagnostics();
+          } finally {
+            frame.close();
+          }
         } else {
           break;
         }
