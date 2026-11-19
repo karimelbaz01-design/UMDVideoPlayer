@@ -523,7 +523,7 @@ isoPicker.onchange=async e=>{
             };
             const nativeButton=document.createElement('button');
             nativeButton.type='button';
-            nativeButton.textContent='▶ TEST LETTORE NATIVO SAFARI (MP4)';
+            nativeButton.textContent='▶ RIPRODUCI CAMPIONE SU SAFARI';
             nativeButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
             const nativeVideo=document.createElement('video');
             nativeVideo.controls=true;nativeVideo.playsInline=true;
@@ -560,7 +560,7 @@ isoPicker.onchange=async e=>{
             const wasmButton=document.createElement('button');
             wasmButton.type='button';
             wasmButton.textContent='▶ TEST CONVERSIONE PROGRESSIVA DA ISO (WASM)';
-            wasmButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
+            wasmButton.style.cssText='display:none';
             const wasmVideo=document.createElement('video');
             wasmVideo.controls=true;wasmVideo.playsInline=true;
             wasmVideo.style.cssText='display:none;width:100%;max-width:520px;margin-top:10px;background:black';
@@ -654,7 +654,11 @@ isoPicker.onchange=async e=>{
                 nativeVideo.src=nativeUrl;nativeVideo.style.display='block';
                 frameReport.textContent='Test nativo MP4 con coppie di campi interlacciati, senza ricodifica e senza audio: premi Play. Non è un file progressivo ricodificato; potrebbe essere incompatibile con Safari.';
                 nativeVideo.onerror=()=>{frameReport.textContent='Safari non riesce ad aprire il MP4 generato (errore media '+(nativeVideo.error?.code??'?')+'). Non è una riproduzione valida.';};
-                nativeVideo.onloadedmetadata=()=>{frameReport.textContent='Safari ha letto MP4: '+nativeVideo.duration.toFixed(2)+' secondi. Premi Play; controlla righe verdi e fluidità.';};
+                nativeVideo.onloadedmetadata=()=>{frameReport.textContent='Safari ha caricato il campione MP4 ('+nativeVideo.duration.toFixed(2)+' s). Premi Play: la lettura dei metadati non garantisce che il video sia decodificabile.';};
+                nativeVideo.onplaying=()=>{frameReport.textContent='Riproduzione avviata su Safari. Controlla fluidità e immagini: il test è senza audio.';};
+                nativeVideo.onwaiting=()=>{frameReport.textContent='Safari è in attesa di dati o decodifica: possibile blocco del campione.';};
+                nativeVideo.onstalled=()=>{frameReport.textContent='Safari ha interrotto il caricamento del campione.';};
+                nativeVideo.onended=()=>{frameReport.textContent='Campione terminato su Safari. Verifica se i fotogrammi sono stati fluidi.';};
                 nativeVideo.load();
               }catch(e){frameReport.textContent='Test nativo non riuscito: '+e.message;}
             };
@@ -839,7 +843,7 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='block';nativeButton.style.display='block';wasmButton.style.display='block';mp4Export.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
+                  frameButton.style.display='none';nativeButton.style.display='block';wasmButton.style.display='none';mp4Export.style.display='block';alternateButton.style.display='none';nalCompareButton.style.display='none';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
