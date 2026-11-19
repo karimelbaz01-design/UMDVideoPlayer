@@ -1514,39 +1514,41 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     grid.insertAdjacentElement('afterend',controls);
     controls.insertAdjacentElement('afterend',live);
     live.insertAdjacentElement('afterend',playbackNote);
-    // Frame-clock playback: requestAnimationFrame follows the display refresh
-    // rate. Derive the frame index from elapsed time so delayed callbacks do
-    // not accumulate drift (as setInterval did). This improves pacing only;
-    // it does not repair damaged or interlaced decoded pixels.
-    const rateLabel=document.createElement('label');
-    rateLabel.textContent='Velocità anteprima: ';
-    rateLabel.style.cssText='font-size:12px;color:#c6bccc';
-    const ratePicker=document.createElement('select');
-    ratePicker.style.cssText='margin-left:6px;background:#30263f;color:#fff;padding:7px;border:1px solid #a98bce;border-radius:7px';
-    for(const fps of [24,25,30]){
-      const option=document.createElement('option');option.value=String(fps);
-      option.textContent=fps+' fps';option.selected=fps===30;
-      ratePicker.append(option);
-    }
-    rateLabel.append(ratePicker);controls.append(rateLabel);
-    let raf=null,started=0,lastIndex=-1;
-    const halt=()=>{if(raf!==null){cancelAnimationFrame(raf);raf=null;}play.disabled=false;};
-    canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
+    // v73: deterministic presentation clock for the validated paired-field
+    // preview. 30000/1001 is provisional, not a measured original UMD PTS.
+    // Keep decoded frames cached and loop them without re-decoding or
+    // accumulating setInterval drift. Do not redraw twice per display tick.
+    const fps=30000/1001;
+    const frameMs=1000/fps;
+    const count=pictures.length-warmup;
+    let raf=null,started=0,lastIndex=-1,dropped=0,loops=0;
+    const halt=()=>{if(raf!==null)cancelAnimationFrame(raf);raf=null;play.disabled=false;};
     const drawIndex=index=>{
       const picture=pictures[index];
       context.drawImage(picture,0,0,canvas.width,canvas.height);
       live.getContext('2d').drawImage(picture,0,0,live.width,live.height);
-      playbackNote.textContent='Riproduzione: fotogramma '+(index+1)+' / '+pictures.length+' · '+ratePicker.value+' fps · anteprima silenziosa.';
+      playbackNote.textContent='Anteprima '+fps.toFixed(2)+' fps (stimati) · fotogramma '+(index+1)+'/'+pictures.length+
+        ' · cicli '+loops+' · fotogrammi saltati '+dropped+' · senza audio.';
     };
     const tick=now=>{
-      const fps=Number(ratePicker.value);
-      const index=Math.min(pictures.length-1,warmup+Math.floor((now-started)*fps/1000));
-      if(index!==lastIndex){drawIndex(index);lastIndex=index;}
-      if(index>=pictures.length-1){halt();return;}
+      if(document.hidden){halt();playbackNote.textContent='Anteprima in pausa: scheda non visibile.';return;}
+      const elapsed=Math.max(0,now-started);
+      const step=Math.floor(elapsed/frameMs);
+      const index=warmup+(step%count);
+      loops=Math.floor(step/count);
+      if(index!==lastIndex){
+        if(lastIndex>=warmup){
+          const priorStep=Math.floor((elapsed-frameMs)/frameMs);
+          if(step>priorStep+1)dropped+=step-priorStep-1;
+        }
+        drawIndex(index);lastIndex=index;
+      }
       raf=requestAnimationFrame(tick);
     };
-    play.onclick=()=>{halt();lastIndex=-1;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
-    stop.onclick=halt;
+    play.onclick=()=>{halt();lastIndex=-1;dropped=0;loops=0;started=performance.now();play.disabled=true;raf=requestAnimationFrame(tick);};
+    stop.onclick=()=>{halt();playbackNote.textContent='Anteprima fermata · '+loops+' cicli · '+dropped+' fotogrammi saltati.';};
+    canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
+    playbackNote.textContent='Anteprima in ciclo a 29,97 fps stimati, senza audio. Premi RIPRODUCI per verificare il movimento.';
     status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
