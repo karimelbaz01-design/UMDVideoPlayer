@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v67 · experimental FFmpeg WASM progressive sample';
+const FRAME_INSPECTOR_VERSION='UMD v68 · WASM load timeout and bundled imports';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -576,15 +576,35 @@ isoPicker.onchange=async e=>{
                 wasmNote.textContent='Preparazione campione H.264 dalla ISO…';
                 const input=new Uint8Array(await frameNativeMp4(frameCandidate).arrayBuffer());
                 wasmNote.textContent='Caricamento FFmpeg WASM (può richiedere tempo e connessione)…';
-                const base='https://cdn.jsdelivr.net/npm/@ffmpeg';
-                const {FFmpeg}=await import(base+'/ffmpeg@0.12.10/dist/esm/index.js');
-                const {toBlobURL}=await import(base+'/util@0.12.1/dist/esm/index.js');
-                const core=base+'/core@0.12.6/dist/umd';
+                // CDN ESM imports need bundled dependency resolution. The
+                // previous jsDelivr ESM entry used bare imports and its worker
+                // had relative imports that break inside a blob: URL.
+                // Both modules below are served as bundled ESM by esm.sh.
+                const withDeadline=(promise,ms,label)=>Promise.race([
+                  promise,
+                  new Promise((_,reject)=>setTimeout(()=>reject(
+                    Error(label+' oltre '+Math.round(ms/1000)+' secondi. Verifica rete o memoria Safari.')),ms))
+                ]);
+                const {FFmpeg}=await withDeadline(
+                  import('https://esm.sh/@ffmpeg/ffmpeg@0.12.10?bundle'),
+                  20000,'Download libreria FFmpeg');
+                const {toBlobURL}=await withDeadline(
+                  import('https://esm.sh/@ffmpeg/util@0.12.1?bundle'),
+                  20000,'Download utilità FFmpeg');
+                const core='https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd';
                 const ffmpeg=new FFmpeg();
-                const workerURL=await toBlobURL(base+'/ffmpeg@0.12.10/dist/esm/worker.js','text/javascript');
-                const coreURL=await toBlobURL(core+'/ffmpeg-core.js','text/javascript');
-                const wasmURL=await toBlobURL(core+'/ffmpeg-core.wasm','application/wasm');
-                await ffmpeg.load({classWorkerURL:workerURL,coreURL,wasmURL});
+                ffmpeg.on('log',({message})=>{
+                  if(/error|invalid|failed/i.test(message))
+                    wasmNote.textContent='FFmpeg: '+message.slice(0,180);
+                });
+                wasmNote.textContent='Preparazione worker e motore WASM…';
+                const workerURL=await withDeadline(
+                  toBlobURL('https://esm.sh/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js?bundle','text/javascript'),
+                  20000,'Download worker FFmpeg');
+                const coreURL=await withDeadline(toBlobURL(core+'/ffmpeg-core.js','text/javascript'),30000,'Download core FFmpeg');
+                const wasmURL=await withDeadline(toBlobURL(core+'/ffmpeg-core.wasm','application/wasm'),60000,'Download WebAssembly FFmpeg');
+                wasmNote.textContent='Avvio FFmpeg WebAssembly…';
+                await withDeadline(ffmpeg.load({classWorkerURL:workerURL,coreURL,wasmURL}),30000,'Avvio worker FFmpeg');
                 await ffmpeg.writeFile('input.mp4',input);
                 wasmNote.textContent='Conversione interlacciato → progressivo in corso…';
                 const code=await ffmpeg.exec(['-i','input.mp4','-map','0:v:0','-vf','bwdif=mode=send_frame:parity=auto:deint=all,format=yuv420p','-c:v','libx264','-preset','ultrafast','-crf','23','-pix_fmt','yuv420p','-movflags','+faststart','-an','output.mp4'], -1);
