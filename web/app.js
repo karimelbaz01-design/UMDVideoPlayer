@@ -672,9 +672,9 @@ isoPicker.onchange=async e=>{
               candidates.sort((a,b)=>b.fields-a.fields);
               const best=candidates[0];
               const estimatedFrames=Math.max(0,Math.floor((best.fields-1)/2));
-              frameReport.textContent='Punto '+best.sample.percent+'%: '+best.fields+' campi H.264, circa '+estimatedFrames+' fotogrammi disponibili (obiettivo 900). Decodifica in corso…';
+              frameReport.textContent='Punto '+best.sample.percent+'%: '+best.fields+' campi H.264. Test da un GOP successivo per isolare il blocco a 42 fotogrammi; non è ancora riproduzione continua…';
               try{
-                await frameDecodeMovieAccessUnits(best.sample.data,frameCanvas,frameReport,'prefer-software',best.sample.timing||[],'original',Math.min(900,Math.max(45,estimatedFrames)));
+                await frameDecodeMovieAccessUnits(best.sample.data,frameCanvas,frameReport,'prefer-software',best.sample.timing||[],'original',Math.min(900,Math.max(45,estimatedFrames)),true);
                 frameReport.textContent+=' Punto ISO '+best.sample.percent+'%; circa '+estimatedFrames+' fotogrammi nel campione, non 30 secondi garantiti. Per 30 secondi reali serve estrazione consecutiva.';
               }catch(err){frameReport.textContent='Test lungo non riuscito: '+(err?.message||err);}
               finally{longTestButton.disabled=false;}
@@ -1242,7 +1242,7 @@ function frameNativeMp4(data){
   const moovFinal=box('moov',mvhd,box('trak',tkhd,box('mdia',mdhd,hdlr,box('minf',vmhd,dinf,stblFinal))));
   return new Blob([ftyp,moovFinal,mdat],{type:'video/mp4'});
 }
-async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original',targetFrames=45){
+async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='prefer-software',pesTiming=[],nalMode='original',targetFrames=45,startAtNextGop=false){
   if(typeof VideoDecoder==='undefined'||typeof EncodedVideoChunk==='undefined')
     throw Error('WebCodecs non disponibile in questo browser.');
   const nals=[];
@@ -1320,7 +1320,14 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
   }
   if(nalStats.forbidden||nalStats.empty||nalStats.missingStart||nalStats.invalidRef)
     throw Error('Flusso H264 non valido: '+JSON.stringify(nalStats));
-  const firstKey=units.findIndex(u=>u.hasIDR);
+  let firstKey=units.findIndex(u=>u.hasIDR);
+  if(startAtNextGop&&firstKey>=0){
+    // Probe a later independent GOP, skipping the anomalous IDR cluster
+    // at the beginning. Retain the original SPS/PPS from the stream.
+    const later=units.findIndex((u,i)=>i>firstKey+120&&u.hasIDR);
+    if(later<0)throw Error('Nessun GOP successivo trovato per il test alternativo.');
+    firstKey=later;
+  }
   if(firstKey<0)throw Error('Nessuna access unit IDR completa nel campione PES.');
   const first=units[firstKey];
   // Parameter sets must precede the IDR slice; parameter sets following
@@ -1486,7 +1493,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    const decodeDiagnostic='Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+' (posizioni '+idrPositions.slice(0,24).join(',')+'), fotogrammi usciti '+decoded+', ultimo timestamp emesso '+(lastOutputTimestamp===null?'nessuno':lastOutputTimestamp)+', errore decoder '+(decoderError?.message||'nessuno')+', invii al momento dell’errore '+(submittedAtError??'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
+    const decodeDiagnostic='Avvio unità '+firstKey+(startAtNextGop?' (GOP alternativo)':'')+'. Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+' (posizioni '+idrPositions.slice(0,24).join(',')+'), fotogrammi usciti '+decoded+', ultimo timestamp emesso '+(lastOutputTimestamp===null?'nessuno':lastOutputTimestamp)+', errore decoder '+(decoderError?.message||'nessuno')+', invii al momento dell’errore '+(submittedAtError??'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
     if(!pictures.length)throw Error(decodeDiagnostic+(decoderError?.message||'Nessun fotogramma prodotto dal decoder.'));
     // Keep decoder output order and report whether it differs from
     // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
