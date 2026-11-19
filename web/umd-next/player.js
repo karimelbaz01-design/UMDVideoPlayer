@@ -39,6 +39,49 @@ let droppedNonVideoNals = 0;
 let packetsWithoutStartCode = 0;
 let firstDecodeNalTypes = '';
 let firstDecodeBytes = 0;
+let accessUnitBuffer = new Uint8Array(0);
+let accessUnitPts = 0;
+let completedAccessUnits = 0;
+let incompleteAccessUnits = 0;
+let lastAccessUnitTime = 0;
+function audBoundaries(b) {
+  const out=[];
+  for(let i=0;i+3<b.length;i++) {
+    if(b[i]===0 && b[i+1]===0 && (b[i+2]===1 || (b[i+2]===0 && b[i+3]===1))) {
+      const offset=i+(b[i+2]===1?3:4);
+      if(offset<b.length && (b[offset]&31)===9) out.push(i);
+      i=offset-1;
+    }
+  }
+  return out;
+}
+function resetAccessUnits() {accessUnitBuffer=new Uint8Array(0);accessUnitPts=0;completedAccessUnits=0;incompleteAccessUnits=0;lastAccessUnitTime=0;}
+function appendAccessUnits(buffer, pts) {
+  const incoming=new Uint8Array(buffer);
+  if(!incoming.length) return [];
+  if(accessUnitBuffer.length===0) accessUnitPts=pts;
+  const merged=new Uint8Array(accessUnitBuffer.length+incoming.length);
+  merged.set(accessUnitBuffer);merged.set(incoming,accessUnitBuffer.length);
+  const positions=audBoundaries(merged), result=[];
+  if(positions.length>=2) {
+    for(let i=0;i<positions.length-1;i++) {
+      const start=i===0?0:positions[i];
+      const bytes=merged.slice(start,positions[i+1]);
+      if(bytes.length) result.push({buffer:bytes,pts:accessUnitPts});
+      accessUnitPts=pts;
+    }
+    accessUnitBuffer=merged.slice(positions[positions.length-1]);
+  } else if(merged.length>2*1024*1024) {
+    // No reliable AUD boundary: do not feed a guessed partial frame to WebCodecs.
+    incompleteAccessUnits++;
+    accessUnitBuffer=merged.slice(-4);
+    accessUnitPts=pts;
+  } else accessUnitBuffer=merged;
+  completedAccessUnits+=result.length;
+  lastAccessUnitTime=performance.now();
+  return result;
+}
+
 function splitAnnexB(buffer) {
   const b = new Uint8Array(buffer), starts = [];
   for (let i=0; i+3<b.length;) {
@@ -66,7 +109,7 @@ diagnostics.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:12
 diagnostics.textContent = 'Diagnostica: in attesa della ISO';
 document.querySelector('.container').appendChild(diagnostics);
 function updateDiagnostics() {
-  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}\nNAL scartate (AUD/SEI/altri): ${droppedNonVideoNals} | Pacchetti senza start code: ${packetsWithoutStartCode}\nPrimo chunk: ${firstDecodeNalTypes || 'non inviato'} (${firstDecodeBytes} byte)`;
+  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}\nNAL scartate (AUD/SEI/altri): ${droppedNonVideoNals} | Pacchetti senza start code: ${packetsWithoutStartCode}\nPrimo chunk: ${firstDecodeNalTypes || 'non inviato'} (${firstDecodeBytes} byte)\nAccess unit complete: ${completedAccessUnits} | Buffer: ${accessUnitBuffer.length} byte | Overflow: ${incompleteAccessUnits}`;
 }
 function containsIdr(buffer) {
   const b = new Uint8Array(buffer);
@@ -210,7 +253,7 @@ function startRenderLoop() {
       worker.postMessage({ type: 'resume' });
     }
 
-    if (isPlaying && videoPackets > 300 && decodedFrames === 0) {
+    if (isPlaying && completedAccessUnits > 150 && decodedFrames === 0) {
       isPlaying = false;
       worker.postMessage({type:'pause'});
       statusText.textContent = 'Decodifica bloccata: ricevuti ' + videoPackets + ' pacchetti, nessun fotogramma. Lettura sospesa.';
@@ -237,7 +280,7 @@ worker.onmessage = (e) => {
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = videoKeyPackets = decoderErrors = 0;
-    firstPacketHex = ''; droppedNonVideoNals = packetsWithoutStartCode = firstDecodeBytes = 0; firstDecodeNalTypes = '';
+    firstPacketHex = ''; droppedNonVideoNals = packetsWithoutStartCode = firstDecodeBytes = 0; firstDecodeNalTypes = ''; resetAccessUnits();
     updateDiagnostics();
     playbackStart = performance.now();
     nextAudioTime = 0;
@@ -253,8 +296,10 @@ worker.onmessage = (e) => {
     if (msg.frameType === FRAME_VIDEO_H264) {
       videoPackets++;
       if (!firstPacketHex) firstPacketHex = Array.from(new Uint8Array(msg.buffer).slice(0,24), b=>b.toString(16).padStart(2,'0')).join(' ');
-      const nals = splitAnnexB(msg.buffer);
-      if (!nals.length) { packetsWithoutStartCode++; return; }
+      const accessUnits = appendAccessUnits(msg.buffer, msg.pts);
+      for (const unit of accessUnits) {
+      const nals = splitAnnexB(unit.buffer);
+      if (!nals.length) { packetsWithoutStartCode++; continue; }
       for(const nal of nals) {
         if ((nal[0]&31)===7) h264Sps = nal;
         if ((nal[0]&31)===8) h264Pps = nal;
@@ -282,15 +327,15 @@ worker.onmessage = (e) => {
           return;
         }
       }
-      if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
-      if (!avccReady || !videoNals.length || (waitingForKeyFrame && !keyPacket)) return;
+      if (firstVideoPts === null) { firstVideoPts = unit.pts; videoWallStart = performance.now(); }
+      if (!avccReady || !videoNals.length || (waitingForKeyFrame && !keyPacket)) continue;
       waitingForKeyFrame = false;
       if (videoDecoder?.state === 'configured') {
         try {
           if (!firstDecodeNalTypes) { firstDecodeNalTypes = videoNals.map(n=>n[0]&31).join(','); firstDecodeBytes = videoNals.reduce((a,n)=>a+n.length+4,0); }
           videoDecoder.decode(new EncodedVideoChunk({
             type: keyPacket ? 'key' : 'delta',
-            timestamp: Math.round(msg.pts * 1000000),
+            timestamp: Math.round(unit.pts * 1000000),
             data: toAvcc(videoNals)
           }));
         } catch(err) {
@@ -299,6 +344,7 @@ worker.onmessage = (e) => {
           updateDiagnostics();
           worker.postMessage({type:'pause'});isPlaying=false;
         }
+      }
       }
     } else if (msg.frameType === FRAME_AUDIO_PCM) {
       audioPackets++;
@@ -312,6 +358,7 @@ worker.onmessage = (e) => {
       h264Sps = h264Pps = null;
     }
     waitingForKeyFrame = true;
+    resetAccessUnits();
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = 0;
