@@ -39,6 +39,25 @@ let droppedNonVideoNals = 0;
 let packetsWithoutStartCode = 0;
 let firstDecodeNalTypes = '';
 let firstDecodeBytes = 0;
+let workerAcksPending = 0;
+const MAX_DECODE_QUEUE = 10;
+let maxDecodeQueueSeen = 0;
+function acknowledgePacket() {
+  const queue = videoDecoder?.state === 'configured' ? videoDecoder.decodeQueueSize : 0;
+  maxDecodeQueueSeen = Math.max(maxDecodeQueueSeen, queue);
+  if (isPlaying && queue > MAX_DECODE_QUEUE) {
+    workerAcksPending++;
+    setTimeout(drainWorkerAcks, 16);
+  } else worker.postMessage({type:'packet-consumed'});
+}
+function drainWorkerAcks() {
+  if (!workerAcksPending) return;
+  const queue = videoDecoder?.state === 'configured' ? videoDecoder.decodeQueueSize : 0;
+  if (!isPlaying || queue <= MAX_DECODE_QUEUE) {
+    while(workerAcksPending>0) {workerAcksPending--;worker.postMessage({type:'packet-consumed'});}
+  } else setTimeout(drainWorkerAcks,16);
+}
+
 let accessUnitBuffer = new Uint8Array(0);
 let accessUnitPts = 0;
 let completedAccessUnits = 0;
@@ -109,7 +128,7 @@ diagnostics.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:12
 diagnostics.textContent = 'Diagnostica: in attesa della ISO';
 document.querySelector('.container').appendChild(diagnostics);
 function updateDiagnostics() {
-  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}\nNAL scartate (AUD/SEI/altri): ${droppedNonVideoNals} | Pacchetti senza start code: ${packetsWithoutStartCode}\nPrimo chunk: ${firstDecodeNalTypes || 'non inviato'} (${firstDecodeBytes} byte)\nAccess unit complete: ${completedAccessUnits} | Buffer: ${accessUnitBuffer.length} byte | Overflow: ${incompleteAccessUnits}`;
+  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}\nNAL scartate (AUD/SEI/altri): ${droppedNonVideoNals} | Pacchetti senza start code: ${packetsWithoutStartCode}\nPrimo chunk: ${firstDecodeNalTypes || 'non inviato'} (${firstDecodeBytes} byte)\nCoda decoder: ${videoDecoder?.decodeQueueSize ?? 0} (picco ${maxDecodeQueueSeen}) | ACK sospesi: ${workerAcksPending}\nAccess unit complete: ${completedAccessUnits} | Buffer: ${accessUnitBuffer.length} byte | Overflow: ${incompleteAccessUnits}`;
 }
 function containsIdr(buffer) {
   const b = new Uint8Array(buffer);
@@ -280,7 +299,7 @@ worker.onmessage = (e) => {
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = videoKeyPackets = decoderErrors = 0;
-    firstPacketHex = ''; droppedNonVideoNals = packetsWithoutStartCode = firstDecodeBytes = 0; firstDecodeNalTypes = ''; resetAccessUnits();
+    firstPacketHex = ''; droppedNonVideoNals = packetsWithoutStartCode = firstDecodeBytes = 0; firstDecodeNalTypes = ''; resetAccessUnits(); workerAcksPending=0;maxDecodeQueueSeen=0;
     updateDiagnostics();
     playbackStart = performance.now();
     nextAudioTime = 0;
@@ -293,6 +312,7 @@ worker.onmessage = (e) => {
     if (boot) boot.textContent = 'ISO aperta dal motore WASM. Diagnostica dei pacchetti in basso.';
     startRenderLoop();
   } else if (msg.type === 'packet') {
+    try {
     if (msg.frameType === FRAME_VIDEO_H264) {
       videoPackets++;
       if (!firstPacketHex) firstPacketHex = Array.from(new Uint8Array(msg.buffer).slice(0,24), b=>b.toString(16).padStart(2,'0')).join(' ');
@@ -350,6 +370,7 @@ worker.onmessage = (e) => {
       audioPackets++;
       scheduleAudio(msg.buffer, msg.pts);
     }
+    } finally { acknowledgePacket(); }
   } else if (msg.type === 'seeked') {
     clearVideoQueue();
     if (videoDecoder && videoDecoder.state === 'configured') {
@@ -359,6 +380,7 @@ worker.onmessage = (e) => {
     }
     waitingForKeyFrame = true;
     resetAccessUnits();
+    workerAcksPending=0;
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = 0;
