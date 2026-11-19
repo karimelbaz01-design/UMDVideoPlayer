@@ -32,7 +32,7 @@ jobs:
             --disable-programs --disable-doc --disable-network --disable-pthreads \
             --enable-avformat --enable-avcodec --enable-avutil --enable-swresample \
             --enable-protocol=file --enable-demuxer=mpegps \
-            --enable-parser=h264,av1 --enable-decoder=h264,atrac3p,av1 \
+            --enable-decoder=atrac3p \
             --enable-small --disable-asm
       - name: Compile FFmpeg
         working-directory: ffmpeg-7.1.1
