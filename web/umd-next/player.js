@@ -54,12 +54,12 @@ let packetsWithoutStartCode = 0;
 let firstDecodeNalTypes = '';
 let firstDecodeBytes = 0;
 let workerAcksPending = 0;
-const MAX_DECODE_QUEUE = 10;
+const MAX_DECODE_QUEUE = 5;
 let maxDecodeQueueSeen = 0;
 function acknowledgePacket() {
   const queue = videoDecoder?.state === 'configured' ? videoDecoder.decodeQueueSize : 0;
   maxDecodeQueueSeen = Math.max(maxDecodeQueueSeen, queue);
-  if (isPlaying && queue > MAX_DECODE_QUEUE) {
+  if (isPlaying && queue >= MAX_DECODE_QUEUE) {
     workerAcksPending++;
     setTimeout(drainWorkerAcks, 16);
   } else worker.postMessage({type:'packet-consumed'});
@@ -67,7 +67,7 @@ function acknowledgePacket() {
 function drainWorkerAcks() {
   if (!workerAcksPending) return;
   const queue = videoDecoder?.state === 'configured' ? videoDecoder.decodeQueueSize : 0;
-  if (!isPlaying || queue <= MAX_DECODE_QUEUE) {
+  if (!isPlaying || queue < MAX_DECODE_QUEUE) {
     while(workerAcksPending>0) {workerAcksPending--;worker.postMessage({type:'packet-consumed'});}
   } else setTimeout(drainWorkerAcks,16);
 }
@@ -364,7 +364,7 @@ worker.onmessage = (e) => {
           videoDecoder.configure({
             codec: 'avc1.' + Array.from(h264Sps.slice(1,4),b=>b.toString(16).padStart(2,'0')).join(''),
             description: avccDescription(h264Sps,h264Pps),
-            codedWidth: canvas.width, codedHeight: canvas.height,
+            // SPS/avcC carries coded dimensions; do not impose a potentially stale canvas size.
             optimizeForLatency: true
           });
           avccReady = true;
