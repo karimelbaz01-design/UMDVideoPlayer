@@ -725,7 +725,7 @@ isoPicker.onchange=async e=>{
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
               frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';nextSampleButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
-              scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
+              scanReport.textContent='Ricerca sull’intero film (16 posizioni, fino alla fine) con finestre da 2 MiB: cerco access unit complete…';
               try{
                 const sections=16,windowBytes=2097152;
                 const rows=[];
@@ -828,7 +828,7 @@ isoPicker.onchange=async e=>{
                     if(type===9)nals.aud++;
                     j+=p;
                   }
-                  if(movieSamples.length<8&&nals.sps&&nals.pps&&nals.idr&&nals.aud){
+                  if(movieSamples.length<16&&nals.sps&&nals.pps&&nals.idr&&nals.aud){
                     // Keep only a bounded local sample. Trim to a parameter set
                     // before the first IDR so the decoder starts on a keyframe.
                     const marks=[];
