@@ -23,6 +23,12 @@ let audioCtx = null;
 let nextAudioTime = 0;
 let basePts = null;
 let baseAudioTime = 0;
+let firstVideoPts = null;
+let videoWallStart = 0;
+let videoPackets = 0;
+let audioPackets = 0;
+let decodedFrames = 0;
+let playbackStart = 0;
 
 // Coda frame video sincronizzati con l'orologio audio
 const videoQueue = [];
@@ -57,6 +63,7 @@ function initVideoDecoder(width, height) {
 
   videoDecoder = new VideoDecoder({
     output: (frame) => {
+      decodedFrames++;
       videoQueue.push(frame);
     },
     error: (err) => {
@@ -118,9 +125,10 @@ function startRenderLoop() {
   if (renderLoopId) cancelAnimationFrame(renderLoopId);
 
   const render = () => {
-    if (isPlaying && audioCtx && basePts !== null && videoQueue.length > 0) {
+    if (isPlaying) {
       // Calcola il tempo corrente del filmato basandosi sull'orologio hardware dell'audio
-      const mediaClock = basePts + (audioCtx.currentTime - baseAudioTime);
+      const hasAudioClock = audioCtx && audioCtx.state === 'running' && basePts !== null;
+      const mediaClock = hasAudioClock ? basePts + (audioCtx.currentTime - baseAudioTime) : (firstVideoPts === null ? 0 : firstVideoPts + (performance.now() - videoWallStart) / 1000);
 
       if (!isSeeking) {
         seekBar.value = Math.floor(mediaClock);
@@ -149,6 +157,9 @@ function startRenderLoop() {
       worker.postMessage({ type: 'resume' });
     }
 
+    if (isPlaying && performance.now() - playbackStart > 2500 && decodedFrames === 0) {
+      statusText.textContent = `Diagnostica: video ${videoPackets} pacchetti, audio ${audioPackets}, frame decodificati ${decodedFrames}. ${videoPackets === 0 ? 'Nessun pacchetto video ricevuto.' : 'Il decoder H.264 non ha prodotto immagini.'}`;
+    }
     renderLoopId = requestAnimationFrame(render);
   };
 
@@ -164,6 +175,9 @@ worker.onmessage = (e) => {
     initAudio();
     initVideoDecoder(msg.width, msg.height);
     basePts = null;
+    firstVideoPts = null;
+    videoPackets = audioPackets = decodedFrames = 0;
+    playbackStart = performance.now();
     nextAudioTime = 0;
     isPlaying = true;
     playPauseBtn.disabled = false;
@@ -173,6 +187,8 @@ worker.onmessage = (e) => {
     startRenderLoop();
   } else if (msg.type === 'packet') {
     if (msg.frameType === FRAME_VIDEO_H264) {
+      videoPackets++;
+      if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
       if (waitingForKeyFrame && !msg.isKey) {
         return; // Scarta i P/B frame finche' non arriva un I-Frame valido
       }
@@ -184,9 +200,10 @@ worker.onmessage = (e) => {
           timestamp: Math.round(msg.pts * 1_000_000), // microsecondi
           data: msg.buffer
         });
-        videoDecoder.decode(chunk);
+        try { videoDecoder.decode(chunk); } catch (err) { statusText.textContent = 'Errore WebCodecs: ' + err.message; console.error(err); }
       }
     } else if (msg.frameType === FRAME_AUDIO_PCM) {
+      audioPackets++;
       scheduleAudio(msg.buffer, msg.pts);
     }
   } else if (msg.type === 'seeked') {
@@ -202,6 +219,9 @@ worker.onmessage = (e) => {
     }
     waitingForKeyFrame = true;
     basePts = null;
+    firstVideoPts = null;
+    videoPackets = audioPackets = decodedFrames = 0;
+    playbackStart = performance.now();
     nextAudioTime = 0;
     isSeeking = false;
   } else if (msg.type === 'eof') {
@@ -222,6 +242,7 @@ isoInput.addEventListener('change', async (e) => {
   statusText.textContent = report;
   console.info('FRAME ISO preflight:', report);
   if (!report.startsWith('ISO9660 OK')) return;
+  try { initAudio(); } catch (err) { console.warn('Audio non disponibile:', err); }
   worker.postMessage({ type: 'open', file });
 });
 
