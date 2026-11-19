@@ -17,6 +17,20 @@ let videoDecoder = null;
 let waitingForKeyFrame = true;
 let isPlaying = false;
 let isSeeking = false;
+let fatalDecoderError = false;
+let workerFlowPaused = false;
+function stopOnDecoderFailure(message) {
+  if (fatalDecoderError) return;
+  fatalDecoderError = true;
+  isPlaying = false;
+  workerFlowPaused = true;
+  workerAcksPending = 0;
+  worker.postMessage({type:'halt'});
+  playPauseBtn.textContent = 'Errore video';
+  playPauseBtn.disabled = true;
+  statusText.textContent = 'Decodifica interrotta: ' + message + '. Carica nuovamente la ISO dopo una correzione.';
+  updateDiagnostics();
+}
 
 // Web Audio API (riproduzione PCM Float32 48kHz Stereo)
 let audioCtx = null;
@@ -180,11 +194,8 @@ function initVideoDecoder(width, height) {
     error: (err) => {
       decoderErrors++;
       lastDecoderError = err?.message || String(err);
-      isPlaying = false;
-      worker.postMessage({type:'pause'});
-      updateDiagnostics();
       console.error('Errore VideoDecoder:', err);
-      statusText.textContent = 'Errore decodifica H.264: ' + err.message;
+      stopOnDecoderFailure(lastDecoderError);
     }
   });
 
@@ -280,20 +291,19 @@ function startRenderLoop() {
       }
     }
 
-    // Applica backpressure al Worker se il buffer video in memoria supera 30 frame
-    if (!isPlaying) {
-      // Non riavviare il worker dopo un errore o uno stop diagnostico.
-    } else if (videoQueue.length > 30) {
-      worker.postMessage({ type: 'pause' });
-    } else if (videoQueue.length < 15) {
-      worker.postMessage({ type: 'resume' });
+    // Send flow-control transitions only, not a resume on every animation frame.
+    if (isPlaying && !fatalDecoderError) {
+      if (videoQueue.length > 30 && !workerFlowPaused) {
+        workerFlowPaused = true;
+        worker.postMessage({type:'pause'});
+      } else if (videoQueue.length < 15 && workerFlowPaused) {
+        workerFlowPaused = false;
+        worker.postMessage({type:'resume'});
+      }
     }
 
     if (isPlaying && completedAccessUnits > 150 && decodedFrames === 0) {
-      isPlaying = false;
-      worker.postMessage({type:'pause'});
-      statusText.textContent = 'Decodifica bloccata: ricevuti ' + videoPackets + ' pacchetti, nessun fotogramma. Lettura sospesa.';
-      updateDiagnostics();
+      stopOnDecoderFailure('Nessun fotogramma dopo 150 access unit');
     }
     if (isPlaying && performance.now() - lastDiagnostic > 1000) { lastDiagnostic = performance.now(); updateDiagnostics(); }
     if (isPlaying && performance.now() - playbackStart > 2500 && decodedFrames === 0) {
@@ -312,6 +322,8 @@ worker.onmessage = (e) => {
     statusText.textContent = 'Motore WASM pronto. Seleziona una ISO UMD Video.';
   } else if (msg.type === 'opened') {
     initAudio();
+    fatalDecoderError = false;
+    workerFlowPaused = false;
     initVideoDecoder(msg.width, msg.height);
     basePts = null;
     firstVideoPts = null;
@@ -329,6 +341,7 @@ worker.onmessage = (e) => {
     if (boot) boot.textContent = 'ISO aperta dal motore WASM. Diagnostica dei pacchetti in basso.';
     startRenderLoop();
   } else if (msg.type === 'packet') {
+    if (fatalDecoderError) return;
     try {
     if (msg.frameType === FRAME_VIDEO_H264) {
       videoPackets++;
@@ -360,7 +373,7 @@ worker.onmessage = (e) => {
           lastDecoderError = err.message || String(err);
           statusText.textContent = 'Configurazione AVCC: ' + lastDecoderError;
           updateDiagnostics();
-          worker.postMessage({type:'pause'});isPlaying=false;
+          stopOnDecoderFailure(lastDecoderError);
           return;
         }
       }
@@ -387,7 +400,7 @@ worker.onmessage = (e) => {
       audioPackets++;
       scheduleAudio(msg.buffer, msg.pts);
     }
-    } finally { acknowledgePacket(); }
+    } finally { if (!fatalDecoderError) acknowledgePacket(); }
   } else if (msg.type === 'seeked') {
     clearVideoQueue();
     if (videoDecoder && videoDecoder.state === 'configured') {
@@ -398,6 +411,7 @@ worker.onmessage = (e) => {
     waitingForKeyFrame = true;
     resetAccessUnits();
     workerAcksPending=0;
+    workerFlowPaused=false;
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = 0;
@@ -434,14 +448,17 @@ isoInput.addEventListener('change', async (e) => {
 });
 
 playPauseBtn.addEventListener('click', () => {
+  if (fatalDecoderError) return;
   if (isPlaying) {
     isPlaying = false;
+    workerFlowPaused = true;
     worker.postMessage({ type: 'pause' });
     if (audioCtx) audioCtx.suspend();
     playPauseBtn.textContent = 'Riproduci';
     statusText.textContent = 'In pausa';
   } else {
     isPlaying = true;
+    workerFlowPaused = false;
     if (audioCtx) audioCtx.resume();
     worker.postMessage({ type: 'resume' });
     playPauseBtn.textContent = 'Pausa';
