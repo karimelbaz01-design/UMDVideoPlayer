@@ -1455,6 +1455,8 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     const presentationRank=new Array(selected.length);
     presentation.forEach((decodeIndex,rank)=>{presentationRank[decodeIndex]=rank;});
     const bCount=selected.filter(u=>u.pictureType==='B').length;
+    const idrCount=selected.filter(u=>u.hasIDR).length;
+    let submitted=0,firstDecoderFailure=-1;
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
       const unit=selected[i];
@@ -1473,11 +1475,15 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
         const combined=new Uint8Array(params.length+chunk.length);
         combined.set(params);combined.set(chunk,params.length);chunk=combined;
       }
-      decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(targetFrames>45?i:(presentationRank[i]??i))*33367,data:chunk}));
+      try{
+        decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(targetFrames>45?i:(presentationRank[i]??i))*33367,data:chunk}));
+        submitted++;
+      }catch(err){firstDecoderFailure=i;decoderError=err;break;}
       if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
     }
     if(decoder.state!=='closed')await decoder.flush();
-    if(!pictures.length)throw Error(decoderError?.message||'Nessun fotogramma prodotto dal decoder.');
+    const decodeDiagnostic='Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+', fotogrammi usciti '+decoded+', errore decoder '+(decoderError?.message||'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
+    if(!pictures.length)throw Error(decodeDiagnostic+(decoderError?.message||'Nessun fotogramma prodotto dal decoder.'));
     // Keep decoder output order and report whether it differs from
     // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
     const outputReorders=pictures.reduce((n,p,i)=>n+(i>0&&p.timestamp<pictures[i-1].timestamp?1:0),0);
@@ -1607,7 +1613,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     stop.onclick=()=>{halt();playbackNote.textContent='Anteprima fermata · '+loops+' cicli · '+dropped+' fotogrammi saltati.';};
     canvas._framePlayback={stop:()=>{halt();controls.remove();live.remove();playbackNote.remove();}};
     playbackNote.textContent='Anteprima singola a 29,97 fps stimati, senza audio. I campioni disponibili non sono consecutivi.';
-    status.textContent='Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione; test lungo mantiene ordine di presentazione emesso dal decoder. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
+    status.textContent=decodeDiagnostic+' Test campi interlacciati accoppiati ('+rawFields.length+' campi in '+selected.length+' campioni). Formato decoder '+(useAvc?'AVC length-prefixed con avcC':'Annex-B fallback')+'. Riordino sperimentale B-frame: '+bCount+' B su '+selected.length+' unità; timestamp di presentazione ricostruiti (non PTS originali). Decoder senza modalità bassa latenza; inversioni timestamp in output '+outputReorders+'. NAL '+(nalMode==='no-aud'?'senza AUD':'originali con AUD')+'. PTS originali associati: '+anchored.length+', PTS decrescenti '+nonMonotonicAnchors+', più ancore sulla stessa unità '+anchorReorder+'. Timestamp sintetici ancora usati per la riproduzione; test lungo mantiene ordine di presentazione emesso dal decoder. NAL '+nals.length+', AUD '+aud.length+', unità scartate '+discardedUnits+', unità multi-slice '+multiSliceUnits+'. PES ('+acceleration+'): '+selected.length+' unità complete, '+decoded+' fotogrammi, '+uniqueTimestamps+' timestamp distinti. Avvio al fotogramma '+(warmup+1)+' (verde '+Math.round(scores[warmup].green*100)+'%, righe '+scores[warmup].striping.toFixed(1)+'). Ordinamento per timestamp; artefatti non ancora corretti.';
   }finally{
     if(decoder.state!=='closed')decoder.close();
   }
