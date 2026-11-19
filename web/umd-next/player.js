@@ -29,6 +29,27 @@ let videoPackets = 0;
 let audioPackets = 0;
 let decodedFrames = 0;
 let playbackStart = 0;
+let videoKeyPackets = 0;
+let decoderErrors = 0;
+let lastDiagnostic = 0;
+let firstPacketHex = '';
+const diagnostics = document.createElement('pre');
+diagnostics.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;color:#c4d7e8;background:#10151e;padding:12px;border-radius:8px;margin-top:12px';
+diagnostics.textContent = 'Diagnostica: in attesa della ISO';
+document.querySelector('.container').appendChild(diagnostics);
+function updateDiagnostics() {
+  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'}`;
+}
+function containsIdr(buffer) {
+  const b = new Uint8Array(buffer);
+  for(let i=0;i+4<b.length;i++) {
+    if(b[i]===0 && b[i+1]===0 && (b[i+2]===1 || (b[i+2]===0 && b[i+3]===1))) {
+      const p=i+(b[i+2]===1?3:4);
+      if(p<b.length && (b[p]&31)===5) return true;
+    }
+  }
+  return false;
+}
 
 // Coda frame video sincronizzati con l'orologio audio
 const videoQueue = [];
@@ -67,6 +88,8 @@ function initVideoDecoder(width, height) {
       videoQueue.push(frame);
     },
     error: (err) => {
+      decoderErrors++;
+      updateDiagnostics();
       console.error('Errore VideoDecoder:', err);
       statusText.textContent = 'Errore decodifica H.264: ' + err.message;
     }
@@ -157,6 +180,7 @@ function startRenderLoop() {
       worker.postMessage({ type: 'resume' });
     }
 
+    if (isPlaying && performance.now() - lastDiagnostic > 1000) { lastDiagnostic = performance.now(); updateDiagnostics(); }
     if (isPlaying && performance.now() - playbackStart > 2500 && decodedFrames === 0) {
       statusText.textContent = `Diagnostica: video ${videoPackets} pacchetti, audio ${audioPackets}, frame decodificati ${decodedFrames}. ${videoPackets === 0 ? 'Nessun pacchetto video ricevuto.' : 'Il decoder H.264 non ha prodotto immagini.'}`;
     }
@@ -176,7 +200,9 @@ worker.onmessage = (e) => {
     initVideoDecoder(msg.width, msg.height);
     basePts = null;
     firstVideoPts = null;
-    videoPackets = audioPackets = decodedFrames = 0;
+    videoPackets = audioPackets = decodedFrames = videoKeyPackets = decoderErrors = 0;
+    firstPacketHex = '';
+    updateDiagnostics();
     playbackStart = performance.now();
     nextAudioTime = 0;
     isPlaying = true;
@@ -188,15 +214,18 @@ worker.onmessage = (e) => {
   } else if (msg.type === 'packet') {
     if (msg.frameType === FRAME_VIDEO_H264) {
       videoPackets++;
+      if (!firstPacketHex) firstPacketHex = Array.from(new Uint8Array(msg.buffer).slice(0,24), b=>b.toString(16).padStart(2,'0')).join(' ');
+      const keyPacket = msg.isKey || containsIdr(msg.buffer);
+      if (keyPacket) videoKeyPackets++;
       if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
-      if (waitingForKeyFrame && !msg.isKey) {
+      if (waitingForKeyFrame && !keyPacket) {
         return; // Scarta i P/B frame finche' non arriva un I-Frame valido
       }
       waitingForKeyFrame = false;
 
       if (videoDecoder && videoDecoder.state === 'configured') {
         const chunk = new EncodedVideoChunk({
-          type: msg.isKey ? 'key' : 'delta',
+          type: keyPacket ? 'key' : 'delta',
           timestamp: Math.round(msg.pts * 1_000_000), // microsecondi
           data: msg.buffer
         });
@@ -225,10 +254,12 @@ worker.onmessage = (e) => {
     nextAudioTime = 0;
     isSeeking = false;
   } else if (msg.type === 'eof') {
+    updateDiagnostics();
     statusText.textContent = 'Riproduzione terminata.';
     isPlaying = false;
     playPauseBtn.textContent = 'Riproduci';
   } else if (msg.type === 'error') {
+    updateDiagnostics();
     statusText.textContent = 'Errore: ' + msg.message;
   }
 };
