@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v66 · timed preview playback';
+const FRAME_INSPECTOR_VERSION='UMD v67 · experimental FFmpeg WASM progressive sample';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -555,6 +555,52 @@ isoPicker.onchange=async e=>{
               verifiedVideo.onloadedmetadata=()=>{verifiedStatus.textContent='File locale pronto: '+selected.name+' · '+verifiedVideo.duration.toFixed(2)+' s. Premi Play.';};
               verifiedVideo.load();
             };
+            // Experimental in-browser FFmpeg/WASM conversion of the ISO-derived
+            // short sample. Never process the entire ISO in WASM memory.
+            const wasmButton=document.createElement('button');
+            wasmButton.type='button';
+            wasmButton.textContent='▶ TEST CONVERSIONE PROGRESSIVA DA ISO (WASM)';
+            wasmButton.style.cssText='display:none;margin-top:10px;padding:12px;border:1px solid #bba0f4;border-radius:10px;background:#30263f;color:#eee;font-weight:700';
+            const wasmVideo=document.createElement('video');
+            wasmVideo.controls=true;wasmVideo.playsInline=true;
+            wasmVideo.style.cssText='display:none;width:100%;max-width:520px;margin-top:10px;background:black';
+            const wasmNote=document.createElement('p');
+            wasmNote.style.cssText='display:none;font-size:12px;color:#cfc0dd';
+            wasmNote.textContent='Prova sperimentale: converte solo il campione ISO selezionato (circa 1,5 s), senza audio. Richiede download del motore FFmpeg WASM e memoria libera.';
+            let wasmUrl=null;
+            wasmButton.onclick=async()=>{
+              if(!frameCandidate)return;
+              wasmButton.disabled=true;
+              wasmNote.style.display='block';
+              try{
+                wasmNote.textContent='Preparazione campione H.264 dalla ISO…';
+                const input=new Uint8Array(await frameNativeMp4(frameCandidate).arrayBuffer());
+                wasmNote.textContent='Caricamento FFmpeg WASM (può richiedere tempo e connessione)…';
+                const base='https://cdn.jsdelivr.net/npm/@ffmpeg';
+                const {FFmpeg}=await import(base+'/ffmpeg@0.12.10/dist/esm/index.js');
+                const {toBlobURL}=await import(base+'/util@0.12.1/dist/esm/index.js');
+                const core=base+'/core@0.12.6/dist/umd';
+                const ffmpeg=new FFmpeg();
+                const workerURL=await toBlobURL(base+'/ffmpeg@0.12.10/dist/esm/worker.js','text/javascript');
+                const coreURL=await toBlobURL(core+'/ffmpeg-core.js','text/javascript');
+                const wasmURL=await toBlobURL(core+'/ffmpeg-core.wasm','application/wasm');
+                await ffmpeg.load({classWorkerURL:workerURL,coreURL,wasmURL});
+                await ffmpeg.writeFile('input.mp4',input);
+                wasmNote.textContent='Conversione interlacciato → progressivo in corso…';
+                const code=await ffmpeg.exec(['-i','input.mp4','-map','0:v:0','-vf','bwdif=mode=send_frame:parity=auto:deint=all,format=yuv420p','-c:v','libx264','-preset','ultrafast','-crf','23','-pix_fmt','yuv420p','-movflags','+faststart','-an','output.mp4'], -1);
+                if(code!==0)throw Error('FFmpeg terminato con codice '+code);
+                const output=await ffmpeg.readFile('output.mp4');
+                if(wasmUrl)URL.revokeObjectURL(wasmUrl);
+                wasmUrl=URL.createObjectURL(new Blob([output],{type:'video/mp4'}));
+                wasmVideo.src=wasmUrl;wasmVideo.style.display='block';
+                wasmVideo.onerror=()=>{wasmNote.textContent='Conversione completata, ma Safari rifiuta il file risultante (errore '+(wasmVideo.error?.code??'?')+').';};
+                wasmVideo.onloadedmetadata=()=>{wasmNote.textContent='Campione convertito in locale: '+wasmVideo.duration.toFixed(2)+' secondi. Premi Play e controlla verde e fluidità.';};
+                wasmVideo.load();
+                ffmpeg.terminate();
+              }catch(err){
+                wasmNote.textContent='Conversione WASM non riuscita: '+(err?.message||String(err))+'. Il motore può non caricarsi su Safari o non avere abbastanza memoria.';
+              }finally{wasmButton.disabled=false;}
+            };
             const mp4Export=document.createElement('button');
             mp4Export.type='button';
             mp4Export.textContent='ESPORTA MP4 GENERATO (per analisi)';
@@ -609,7 +655,7 @@ isoPicker.onchange=async e=>{
             };
             scanButton.onclick=async()=>{
               scanButton.disabled=true;
-              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
+              frameCandidate=null;movieSamples.length=0;samplePicker.replaceChildren();samplePicker.style.display='none';frameButton.style.display='none';nativeButton.style.display='none';wasmButton.style.display='none';mp4Export.style.display='none';alternateButton.style.display='none';nalCompareButton.style.display='none';frameCanvas.style.display='none';frameReport.textContent='';
               scanReport.textContent='Ricerca su 16 posizioni con finestre da 2 MiB: cerco access unit complete…';
               try{
                 const sections=16,windowBytes=2097152;
@@ -761,14 +807,14 @@ isoPicker.onchange=async e=>{
                   });
                   samplePicker.style.display='block';
                   frameCandidate=movieSamples[0].data;
-                  frameButton.style.display='block';nativeButton.style.display='block';mp4Export.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
+                  frameButton.style.display='block';nativeButton.style.display='block';wasmButton.style.display='block';mp4Export.style.display='block';alternateButton.style.display='block';nalCompareButton.style.display='block';
                   frameReport.textContent='Trovati '+movieSamples.length+' punti indipendenti. Cambia punto per capire se il verde dipende dall’inizio del flusso. Non è una correzione dei colori.';
                 }
                 scanReport.textContent='Ricerca completata. '+candidates.length+'/'+sections+' finestre contengono firme SPS, PPS e IDR nei payload video PES.\n'+rows.map(r=>r.percent+'%: PES '+r.pesPackets+', video '+r.videoBytes+' B, SPS '+r.sps+', PPS '+r.pps+', IDR '+r.idr+', AUD '+r.aud+', PES scartati '+r.invalidPes+', prefissi NAL divisi '+r.splitNalPrefixes+', PTS/DTS diversi '+r.ptsDtsDifferent+', scarto massimo '+r.ptsDtsMaxMs+'ms, PTS '+r.ptsPackets+', DTS '+r.dtsPackets+', PTS non validi '+r.invalidPts+', PTS indietro '+r.backwardPts+', salti >1s '+r.largePtsGaps+', intervallo '+(r.ptsSpanSeconds===null?'n/d':r.ptsSpanSeconds+'s')).join('\n')+'\nATTENZIONE: firme nei payload PES, non fotogrammi validati. Il test non riproduce ancora il film.';
               }catch(err){scanReport.textContent='Ricerca interrotta: '+err.message;}
               finally{scanButton.disabled=false;}
             };
-            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
+            movieTest.append(movieTitle,movieDescription,movieButton,movieCanvas,movieStatus,exportButton,exportReport,scanButton,scanReport,samplePicker,nativeButton,nativeVideo,wasmButton,wasmVideo,wasmNote,verifiedLabel,verifiedPicker,verifiedVideo,verifiedStatus,mp4Export,frameButton,alternateButton,nalCompareButton,frameCanvas,frameReport);
             candidatesPanel.insertAdjacentElement('afterend',movieTest);
             const starts=[];
             for(let k=0;k+3<joined.length;k++){
