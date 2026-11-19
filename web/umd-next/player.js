@@ -210,6 +210,8 @@ worker.onmessage = (e) => {
     playPauseBtn.textContent = 'Pausa';
     seekBar.disabled = false;
     statusText.textContent = 'Riproduzione in corso...';
+    const boot = document.getElementById('bootDiagnostics');
+    if (boot) boot.textContent = 'ISO aperta dal motore WASM. Diagnostica dei pacchetti in basso.';
     startRenderLoop();
   } else if (msg.type === 'packet') {
     if (msg.frameType === FRAME_VIDEO_H264) {
@@ -261,6 +263,8 @@ worker.onmessage = (e) => {
   } else if (msg.type === 'error') {
     updateDiagnostics();
     statusText.textContent = 'Errore: ' + msg.message;
+    const boot = document.getElementById('bootDiagnostics');
+    if (boot) boot.textContent = 'Errore motore: ' + msg.message + '\nControlla anche il risultato analisi ISO riportato nella diagnostica.';
   }
 };
 
@@ -271,6 +275,9 @@ isoInput.addEventListener('change', async (e) => {
   statusText.textContent = 'Analisi struttura ISO in corso...';
   const report = await inspectIso9660(file);
   statusText.textContent = report;
+  const boot = document.getElementById('bootDiagnostics');
+  if (boot) boot.textContent = 'Analisi ISO: ' + report;
+  diagnostics.textContent = 'Analisi ISO: ' + report;
   console.info('FRAME ISO preflight:', report);
   if (!report.startsWith('ISO9660 OK')) return;
   try { initAudio(); } catch (err) { console.warn('Audio non disponibile:', err); }
