@@ -81,7 +81,7 @@ async function inspectSfo(file,record){
 }
 
 const isoPicker=$('inspectFile'),isoButton=$('inspectImage'),isoReport=$('discReport');
-const FRAME_INSPECTOR_VERSION='UMD v68 · WASM load timeout and bundled imports';
+const FRAME_INSPECTOR_VERSION='UMD v69 · WASM stage watchdog';
 isoReport.textContent='Analizzatore pronto: '+FRAME_INSPECTOR_VERSION+' — seleziona una ISO.';
 isoButton.onclick=()=>{isoReport.textContent='Seleziona il file dall’app File. Se il nome non compare dopo la selezione, usa il campo Scegli file sottostante.';isoPicker.click();};
 isoPicker.addEventListener('cancel',()=>{isoReport.textContent='Nessun file selezionato. Se il file è su iCloud, scaricalo prima nell’app File e riprova.';});
@@ -572,7 +572,10 @@ isoPicker.onchange=async e=>{
               if(!frameCandidate)return;
               wasmButton.disabled=true;
               wasmNote.style.display='block';
+              let stage='inizializzazione',watchdog=null,seconds=0;
               try{
+                watchdog=setInterval(()=>{seconds++;wasmNote.textContent='FASE: '+stage+' · '+seconds+' s trascorsi. '+(seconds>30?'Se resta qui, il caricamento non è riuscito.':'Attendi il risultato della fase corrente.');},1000);
+                stage='preparazione campione ISO';
                 wasmNote.textContent='Preparazione campione H.264 dalla ISO…';
                 const input=new Uint8Array(await frameNativeMp4(frameCandidate).arrayBuffer());
                 wasmNote.textContent='Caricamento FFmpeg WASM (può richiedere tempo e connessione)…';
@@ -585,9 +588,11 @@ isoPicker.onchange=async e=>{
                   new Promise((_,reject)=>setTimeout(()=>reject(
                     Error(label+' oltre '+Math.round(ms/1000)+' secondi. Verifica rete o memoria Safari.')),ms))
                 ]);
+                stage='download libreria FFmpeg';
                 const {FFmpeg}=await withDeadline(
                   import('https://esm.sh/@ffmpeg/ffmpeg@0.12.10?bundle'),
                   20000,'Download libreria FFmpeg');
+                stage='download utilità FFmpeg';
                 const {toBlobURL}=await withDeadline(
                   import('https://esm.sh/@ffmpeg/util@0.12.1?bundle'),
                   20000,'Download utilità FFmpeg');
@@ -598,18 +603,25 @@ isoPicker.onchange=async e=>{
                     wasmNote.textContent='FFmpeg: '+message.slice(0,180);
                 });
                 wasmNote.textContent='Preparazione worker e motore WASM…';
+                stage='download worker FFmpeg';
                 const workerURL=await withDeadline(
                   toBlobURL('https://esm.sh/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js?bundle','text/javascript'),
                   20000,'Download worker FFmpeg');
+                stage='download core JavaScript';
                 const coreURL=await withDeadline(toBlobURL(core+'/ffmpeg-core.js','text/javascript'),30000,'Download core FFmpeg');
+                stage='download motore WebAssembly';
                 const wasmURL=await withDeadline(toBlobURL(core+'/ffmpeg-core.wasm','application/wasm'),60000,'Download WebAssembly FFmpeg');
                 wasmNote.textContent='Avvio FFmpeg WebAssembly…';
+                stage='avvio worker WebAssembly';
                 await withDeadline(ffmpeg.load({classWorkerURL:workerURL,coreURL,wasmURL}),30000,'Avvio worker FFmpeg');
-                await ffmpeg.writeFile('input.mp4',input);
+                stage='caricamento campione nel motore';
+                await withDeadline(ffmpeg.writeFile('input.mp4',input),15000,'Scrittura file WASM');
                 wasmNote.textContent='Conversione interlacciato → progressivo in corso…';
-                const code=await ffmpeg.exec(['-i','input.mp4','-map','0:v:0','-vf','bwdif=mode=send_frame:parity=auto:deint=all,format=yuv420p','-c:v','libx264','-preset','ultrafast','-crf','23','-pix_fmt','yuv420p','-movflags','+faststart','-an','output.mp4'], -1);
+                stage='conversione video (max 90 s)';
+                const code=await withDeadline(ffmpeg.exec(['-i','input.mp4','-map','0:v:0','-vf','bwdif=mode=send_frame:parity=auto:deint=all,format=yuv420p','-c:v','libx264','-preset','ultrafast','-crf','23','-pix_fmt','yuv420p','-movflags','+faststart','-an','output.mp4'], -1),90000,'Conversione FFmpeg');
                 if(code!==0)throw Error('FFmpeg terminato con codice '+code);
-                const output=await ffmpeg.readFile('output.mp4');
+                stage='lettura video convertito';
+                const output=await withDeadline(ffmpeg.readFile('output.mp4'),15000,'Lettura video convertito');
                 if(wasmUrl)URL.revokeObjectURL(wasmUrl);
                 wasmUrl=URL.createObjectURL(new Blob([output],{type:'video/mp4'}));
                 wasmVideo.src=wasmUrl;wasmVideo.style.display='block';
@@ -619,7 +631,7 @@ isoPicker.onchange=async e=>{
                 ffmpeg.terminate();
               }catch(err){
                 wasmNote.textContent='Conversione WASM non riuscita: '+(err?.message||String(err))+'. Il motore può non caricarsi su Safari o non avere abbastanza memoria.';
-              }finally{wasmButton.disabled=false;}
+              }finally{if(watchdog)clearInterval(watchdog);wasmButton.disabled=false;}
             };
             const mp4Export=document.createElement('button');
             mp4Export.type='button';
