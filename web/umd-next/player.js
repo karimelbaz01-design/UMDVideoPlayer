@@ -89,6 +89,8 @@ function initVideoDecoder(width, height) {
     },
     error: (err) => {
       decoderErrors++;
+      isPlaying = false;
+      worker.postMessage({type:'pause'});
       updateDiagnostics();
       console.error('Errore VideoDecoder:', err);
       statusText.textContent = 'Errore decodifica H.264: ' + err.message;
@@ -174,12 +176,20 @@ function startRenderLoop() {
     }
 
     // Applica backpressure al Worker se il buffer video in memoria supera 30 frame
-    if (isPlaying && videoQueue.length > 30) {
+    if (!isPlaying) {
+      // Non riavviare il worker dopo un errore o uno stop diagnostico.
+    } else if (videoQueue.length > 30) {
       worker.postMessage({ type: 'pause' });
-    } else if (isPlaying && videoQueue.length < 15) {
+    } else if (videoQueue.length < 15) {
       worker.postMessage({ type: 'resume' });
     }
 
+    if (isPlaying && videoPackets > 300 && decodedFrames === 0) {
+      isPlaying = false;
+      worker.postMessage({type:'pause'});
+      statusText.textContent = 'Decodifica bloccata: ricevuti ' + videoPackets + ' pacchetti, nessun fotogramma. Lettura sospesa.';
+      updateDiagnostics();
+    }
     if (isPlaying && performance.now() - lastDiagnostic > 1000) { lastDiagnostic = performance.now(); updateDiagnostics(); }
     if (isPlaying && performance.now() - playbackStart > 2500 && decodedFrames === 0) {
       statusText.textContent = `Diagnostica: video ${videoPackets} pacchetti, audio ${audioPackets}, frame decodificati ${decodedFrames}. ${videoPackets === 0 ? 'Nessun pacchetto video ricevuto.' : 'Il decoder H.264 non ha prodotto immagini.'}`;
