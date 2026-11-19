@@ -657,10 +657,25 @@ isoPicker.onchange=async e=>{
               longTestButton.disabled=true;
               nativeVideo.pause();nativeVideo.style.display='none';
               frameCanvas.style.display='block';
-              frameReport.textContent='Decodifica sperimentale fino a 900 fotogrammi dal primo punto ISO. Su iPhone potrebbe richiedere tempo e memoria…';
+              // Do not assume the first sampled point has enough consecutive pictures.
+              // Count actual H.264 access-unit delimiters before choosing a preview.
+              const audCount=data=>{
+                let count=0;
+                for(let i=0;i+5<data.length;i++){
+                  if(data[i]!==0||data[i+1]!==0)continue;
+                  const prefix=data[i+2]===1?3:(data[i+2]===0&&data[i+3]===1?4:0);
+                  if(prefix&&((data[i+prefix]&31)===9)){count++;i+=prefix;}
+                }
+                return count;
+              };
+              const candidates=movieSamples.map((sample,index)=>({sample,index,fields:audCount(sample.data)}));
+              candidates.sort((a,b)=>b.fields-a.fields);
+              const best=candidates[0];
+              const estimatedFrames=Math.max(0,Math.floor((best.fields-1)/2));
+              frameReport.textContent='Punto '+best.sample.percent+'%: '+best.fields+' campi H.264, circa '+estimatedFrames+' fotogrammi disponibili (obiettivo 900). Decodifica in corso…';
               try{
-                await frameDecodeMovieAccessUnits(movieSamples[0].data,frameCanvas,frameReport,'prefer-software',movieSamples[0].timing||[],'original',900);
-                frameReport.textContent+=' Test lungo: durata effettiva dipendente dai fotogrammi decodificati; non è ancora un player continuo completo.';
+                await frameDecodeMovieAccessUnits(best.sample.data,frameCanvas,frameReport,'prefer-software',best.sample.timing||[],'original',Math.min(900,Math.max(45,estimatedFrames)));
+                frameReport.textContent+=' Punto ISO '+best.sample.percent+'%; circa '+estimatedFrames+' fotogrammi nel campione, non 30 secondi garantiti. Per 30 secondi reali serve estrazione consecutiva.';
               }catch(err){frameReport.textContent='Test lungo non riuscito: '+(err?.message||err);}
               finally{longTestButton.disabled=false;}
             };
