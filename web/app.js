@@ -1467,6 +1467,7 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
     const bCount=selected.filter(u=>u.pictureType==='B').length;
     const idrCount=selected.filter(u=>u.hasIDR).length;
     let firstDecoderFailure=-1;
+    let checkpoints=0,checkpointFailure=null;
     const idrPositions=selected.map((u,i)=>u.hasIDR?i:null).filter(i=>i!==null);
     for(let i=0;i<selected.length;i++){
       if(decoder.state==='closed')break;
@@ -1490,10 +1491,24 @@ async function frameDecodeMovieAccessUnits(data,canvas,status,acceleration='pref
         decoder.decode(new EncodedVideoChunk({type:unit.hasIDR?'key':'delta',timestamp:(targetFrames>45?i:(presentationRank[i]??i))*33367,data:chunk}));
         submitted++;
       }catch(err){firstDecoderFailure=i;decoderError=err;break;}
-      if(decoder.decodeQueueSize>8)await new Promise(resolve=>setTimeout(resolve,20));
+      // On iOS, submitting an entire interlaced GOP to an asynchronous
+      // decoder can hide the actual failing boundary. Drain every 24 pictures
+      // in long tests, preserving the same decoder and reference state.
+      if(targetFrames>45&&(i+1)%24===0&&decoder.state!=='closed'){
+        try{
+          await decoder.flush();
+          checkpoints++;
+        }catch(err){
+          checkpointFailure='unità '+i+': '+(err?.message||err);
+          decoderError=err;
+          break;
+        }
+      }else if(decoder.decodeQueueSize>8){
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
     }
     if(decoder.state!=='closed')await decoder.flush();
-    const decodeDiagnostic='Avvio unità '+firstKey+(startAtNextGop?' (GOP alternativo)':'')+'. Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+' (posizioni '+idrPositions.slice(0,24).join(',')+'), fotogrammi usciti '+decoded+', ultimo timestamp emesso '+(lastOutputTimestamp===null?'nessuno':lastOutputTimestamp)+', errore decoder '+(decoderError?.message||'nessuno')+', invii al momento dell’errore '+(submittedAtError??'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
+    const decodeDiagnostic='Checkpoint decoder '+checkpoints+', primo checkpoint fallito '+(checkpointFailure||'nessuno')+'. Avvio unità '+firstKey+(startAtNextGop?' (GOP alternativo)':'')+'. Unità inviate '+submitted+'/'+selected.length+', IDR '+idrCount+' (posizioni '+idrPositions.slice(0,24).join(',')+'), fotogrammi usciti '+decoded+', ultimo timestamp emesso '+(lastOutputTimestamp===null?'nessuno':lastOutputTimestamp)+', errore decoder '+(decoderError?.message||'nessuno')+', invii al momento dell’errore '+(submittedAtError??'nessuno')+', primo invio fallito '+firstDecoderFailure+'. ';
     if(!pictures.length)throw Error(decodeDiagnostic+(decoderError?.message||'Nessun fotogramma prodotto dal decoder.'));
     // Keep decoder output order and report whether it differs from
     // submitted chunk order. Synthetic timestamps are NOT real UMD PTS.
