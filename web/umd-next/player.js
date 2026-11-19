@@ -35,6 +35,10 @@ let lastDiagnostic = 0;
 let firstPacketHex = '';
 let h264Sps = null, h264Pps = null, avccReady = false;
 let lastDecoderError = '';
+let droppedNonVideoNals = 0;
+let packetsWithoutStartCode = 0;
+let firstDecodeNalTypes = '';
+let firstDecodeBytes = 0;
 function splitAnnexB(buffer) {
   const b = new Uint8Array(buffer), starts = [];
   for (let i=0; i+3<b.length;) {
@@ -62,7 +66,7 @@ diagnostics.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:12
 diagnostics.textContent = 'Diagnostica: in attesa della ISO';
 document.querySelector('.container').appendChild(diagnostics);
 function updateDiagnostics() {
-  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}`;
+  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}\nNAL scartate (AUD/SEI/altri): ${droppedNonVideoNals} | Pacchetti senza start code: ${packetsWithoutStartCode}\nPrimo chunk: ${firstDecodeNalTypes || 'non inviato'} (${firstDecodeBytes} byte)`;
 }
 function containsIdr(buffer) {
   const b = new Uint8Array(buffer);
@@ -233,7 +237,7 @@ worker.onmessage = (e) => {
     basePts = null;
     firstVideoPts = null;
     videoPackets = audioPackets = decodedFrames = videoKeyPackets = decoderErrors = 0;
-    firstPacketHex = '';
+    firstPacketHex = ''; droppedNonVideoNals = packetsWithoutStartCode = firstDecodeBytes = 0; firstDecodeNalTypes = '';
     updateDiagnostics();
     playbackStart = performance.now();
     nextAudioTime = 0;
@@ -250,12 +254,15 @@ worker.onmessage = (e) => {
       videoPackets++;
       if (!firstPacketHex) firstPacketHex = Array.from(new Uint8Array(msg.buffer).slice(0,24), b=>b.toString(16).padStart(2,'0')).join(' ');
       const nals = splitAnnexB(msg.buffer);
-      if (!nals.length) { statusText.textContent = 'Pacchetto video non in formato Annex-B'; return; }
+      if (!nals.length) { packetsWithoutStartCode++; return; }
       for(const nal of nals) {
         if ((nal[0]&31)===7) h264Sps = nal;
         if ((nal[0]&31)===8) h264Pps = nal;
       }
-      const keyPacket = nals.some(n=>(n[0]&31)===5);
+      // Conserva solo slice VCL (1/5): SPS/PPS sono già nella description avcC.
+      // AUD (9), SEI (6) e altre unità non sono inviate al decoder hardware.
+      const videoNals = nals.filter(n => { const t=n[0]&31; const keep=t===1 || t===5; if (!keep && t!==7 && t!==8) droppedNonVideoNals++; return keep; });
+      const keyPacket = videoNals.some(n=>(n[0]&31)===5);
       if (keyPacket) videoKeyPackets++;
       if (!avccReady && h264Sps && h264Pps && videoDecoder?.state === 'unconfigured') {
         try {
@@ -276,14 +283,15 @@ worker.onmessage = (e) => {
         }
       }
       if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
-      if (!avccReady || (waitingForKeyFrame && !keyPacket)) return;
+      if (!avccReady || !videoNals.length || (waitingForKeyFrame && !keyPacket)) return;
       waitingForKeyFrame = false;
       if (videoDecoder?.state === 'configured') {
         try {
+          if (!firstDecodeNalTypes) { firstDecodeNalTypes = videoNals.map(n=>n[0]&31).join(','); firstDecodeBytes = videoNals.reduce((a,n)=>a+n.length+4,0); }
           videoDecoder.decode(new EncodedVideoChunk({
             type: keyPacket ? 'key' : 'delta',
             timestamp: Math.round(msg.pts * 1000000),
-            data: toAvcc(nals)
+            data: toAvcc(videoNals)
           }));
         } catch(err) {
           lastDecoderError = err.message || String(err);
