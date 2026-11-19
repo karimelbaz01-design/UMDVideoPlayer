@@ -33,12 +33,36 @@ let videoKeyPackets = 0;
 let decoderErrors = 0;
 let lastDiagnostic = 0;
 let firstPacketHex = '';
+let h264Sps = null, h264Pps = null, avccReady = false;
+let lastDecoderError = '';
+function splitAnnexB(buffer) {
+  const b = new Uint8Array(buffer), starts = [];
+  for (let i=0; i+3<b.length;) {
+    if(b[i]===0 && b[i+1]===0 && (b[i+2]===1 || (b[i+2]===0 && b[i+3]===1))) {
+      starts.push({start:i, payload:i+(b[i+2]===1?3:4)}); i += b[i+2]===1?3:4;
+    } else i++;
+  }
+  return starts.map((x,i)=>b.slice(x.payload,i+1<starts.length?starts[i+1].start:b.length)).filter(x=>x.length);
+}
+function avccDescription(sps,pps) {
+  const out = new Uint8Array(11+sps.length+pps.length);
+  let p=0; out[p++]=1;out[p++]=sps[1];out[p++]=sps[2];out[p++]=sps[3];out[p++]=0xff;out[p++]=0xe1;
+  out[p++]=sps.length>>>8;out[p++]=sps.length&255;out.set(sps,p);p+=sps.length;
+  out[p++]=1;out[p++]=pps.length>>>8;out[p++]=pps.length&255;out.set(pps,p);
+  return out;
+}
+function toAvcc(nals) {
+  const length=nals.reduce((a,n)=>a+4+n.length,0), out=new Uint8Array(length);let p=0;
+  for(const n of nals){const len=n.length;out[p++]=(len>>>24)&255;out[p++]=(len>>>16)&255;out[p++]=(len>>>8)&255;out[p++]=len&255;out.set(n,p);p+=len;}
+  return out;
+}
+
 const diagnostics = document.createElement('pre');
 diagnostics.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 monospace;color:#c4d7e8;background:#10151e;padding:12px;border-radius:8px;margin-top:12px';
 diagnostics.textContent = 'Diagnostica: in attesa della ISO';
 document.querySelector('.container').appendChild(diagnostics);
 function updateDiagnostics() {
-  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'}`;
+  diagnostics.textContent = `Video: ${videoPackets} pacchetti (key: ${videoKeyPackets}) | Audio: ${audioPackets} | Frame: ${decodedFrames} | Errori decoder: ${decoderErrors}\nPrimo pacchetto: ${firstPacketHex || 'nessuno'}\nAudio: ${audioCtx?.state || 'non inizializzato'} | Decoder: ${videoDecoder?.state || 'non inizializzato'} | AVCC: ${avccReady ? 'configurato' : 'in attesa SPS/PPS'}\nUltimo errore: ${lastDecoderError || 'nessuno'}`;
 }
 function containsIdr(buffer) {
   const b = new Uint8Array(buffer);
@@ -89,6 +113,7 @@ function initVideoDecoder(width, height) {
     },
     error: (err) => {
       decoderErrors++;
+      lastDecoderError = err?.message || String(err);
       isPlaying = false;
       worker.postMessage({type:'pause'});
       updateDiagnostics();
@@ -97,13 +122,10 @@ function initVideoDecoder(width, height) {
     }
   });
 
-  // Omettendo 'description', WebCodecs accetta stream Annex-B (00 00 00 01) estratti da FFmpeg
-  videoDecoder.configure({
-    codec: 'avc1.4D401E', // Main Profile Level 3.0 (standard PSP UMD)
-    codedWidth: width,
-    codedHeight: height,
-    optimizeForLatency: true
-  });
+  // Configurazione rimandata finché non troviamo SPS e PPS nel flusso.
+  avccReady = false;
+  h264Sps = h264Pps = null;
+  lastDecoderError = '';
 }
 
 function clearVideoQueue() {
@@ -227,21 +249,48 @@ worker.onmessage = (e) => {
     if (msg.frameType === FRAME_VIDEO_H264) {
       videoPackets++;
       if (!firstPacketHex) firstPacketHex = Array.from(new Uint8Array(msg.buffer).slice(0,24), b=>b.toString(16).padStart(2,'0')).join(' ');
-      const keyPacket = msg.isKey || containsIdr(msg.buffer);
-      if (keyPacket) videoKeyPackets++;
-      if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
-      if (waitingForKeyFrame && !keyPacket) {
-        return; // Scarta i P/B frame finche' non arriva un I-Frame valido
+      const nals = splitAnnexB(msg.buffer);
+      if (!nals.length) { statusText.textContent = 'Pacchetto video non in formato Annex-B'; return; }
+      for(const nal of nals) {
+        if ((nal[0]&31)===7) h264Sps = nal;
+        if ((nal[0]&31)===8) h264Pps = nal;
       }
+      const keyPacket = nals.some(n=>(n[0]&31)===5);
+      if (keyPacket) videoKeyPackets++;
+      if (!avccReady && h264Sps && h264Pps && videoDecoder?.state === 'unconfigured') {
+        try {
+          videoDecoder.configure({
+            codec: 'avc1.' + Array.from(h264Sps.slice(1,4),b=>b.toString(16).padStart(2,'0')).join(''),
+            description: avccDescription(h264Sps,h264Pps),
+            codedWidth: canvas.width, codedHeight: canvas.height,
+            optimizeForLatency: true
+          });
+          avccReady = true;
+          updateDiagnostics();
+        } catch(err) {
+          lastDecoderError = err.message || String(err);
+          statusText.textContent = 'Configurazione AVCC: ' + lastDecoderError;
+          updateDiagnostics();
+          worker.postMessage({type:'pause'});isPlaying=false;
+          return;
+        }
+      }
+      if (firstVideoPts === null) { firstVideoPts = msg.pts; videoWallStart = performance.now(); }
+      if (!avccReady || (waitingForKeyFrame && !keyPacket)) return;
       waitingForKeyFrame = false;
-
-      if (videoDecoder && videoDecoder.state === 'configured') {
-        const chunk = new EncodedVideoChunk({
-          type: keyPacket ? 'key' : 'delta',
-          timestamp: Math.round(msg.pts * 1_000_000), // microsecondi
-          data: msg.buffer
-        });
-        try { videoDecoder.decode(chunk); } catch (err) { statusText.textContent = 'Errore WebCodecs: ' + err.message; console.error(err); }
+      if (videoDecoder?.state === 'configured') {
+        try {
+          videoDecoder.decode(new EncodedVideoChunk({
+            type: keyPacket ? 'key' : 'delta',
+            timestamp: Math.round(msg.pts * 1000000),
+            data: toAvcc(nals)
+          }));
+        } catch(err) {
+          lastDecoderError = err.message || String(err);
+          statusText.textContent = 'Errore WebCodecs: ' + lastDecoderError;
+          updateDiagnostics();
+          worker.postMessage({type:'pause'});isPlaying=false;
+        }
       }
     } else if (msg.frameType === FRAME_AUDIO_PCM) {
       audioPackets++;
@@ -251,12 +300,8 @@ worker.onmessage = (e) => {
     clearVideoQueue();
     if (videoDecoder && videoDecoder.state === 'configured') {
       videoDecoder.reset();
-      videoDecoder.configure({
-        codec: 'avc1.4D401E',
-        codedWidth: canvas.width,
-        codedHeight: canvas.height,
-        optimizeForLatency: true
-      });
+      avccReady = false;
+      h264Sps = h264Pps = null;
     }
     waitingForKeyFrame = true;
     basePts = null;
