@@ -127,6 +127,23 @@ jobs:
           if git diff --cached --quiet; then
             echo "Compiled WASM already present"
           else
-            git commit -m "Build: publish FRAME ATRAC3plus WASM binaries"
-            git push origin HEAD:main
+            # Preserve the newly built files while synchronizing with the latest main.
+            cp web/frame-atrac3plus-wasm.js /tmp/frame-atrac3plus-wasm.js
+            cp web/frame-atrac3plus-wasm.wasm /tmp/frame-atrac3plus-wasm.wasm
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/frame-atrac3plus-wasm.js web/frame-atrac3plus-wasm.js
+            cp /tmp/frame-atrac3plus-wasm.wasm web/frame-atrac3plus-wasm.wasm
+            git add -f web/frame-atrac3plus-wasm.js web/frame-atrac3plus-wasm.wasm
+            if ! git diff --cached --quiet; then
+              git commit -m "Build: publish FRAME ATRAC3plus WASM binaries"
+              for attempt in 1 2 3 4 5; do
+                if git push origin HEAD:main; then exit 0; fi
+                echo "main changed during publish; retry $attempt"
+                git fetch origin main
+                git rebase origin/main
+              done
+              echo "::error::Could not publish decoder after retries"
+              exit 1
+            fi
           fi
