@@ -36,6 +36,7 @@ jobs:
           #include <libavcodec/avcodec.h>
           #include <libavutil/channel_layout.h>
           #include <libavutil/samplefmt.h>
+          #include <libavutil/mem.h>
           #include <emscripten/emscripten.h>
           static AVCodecContext *ctx;
           static AVPacket *pkt;
@@ -43,7 +44,8 @@ jobs:
           static int last_rate;
           static int last_channels;
           EMSCRIPTEN_KEEPALIVE int frame_atrac3p_available(void) { return avcodec_find_decoder(AV_CODEC_ID_ATRAC3P) != 0; }
-          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_init(int channels,int rate,int block_align) {
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_init_with_extradata(int channels,int rate,int block_align,const uint8_t *extra,int extra_size) {
+            if(extra_size<0 || extra_size>65536 || (extra_size>0 && !extra)) return -5;
             const AVCodec *codec=avcodec_find_decoder(AV_CODEC_ID_ATRAC3P);
             if (!codec) return -1;
             if (ctx) {avcodec_free_context(&ctx);av_packet_free(&pkt);av_frame_free(&frame);}
@@ -52,12 +54,21 @@ jobs:
             av_channel_layout_default(&ctx->ch_layout,channels>0?channels:2);
             ctx->sample_rate=rate>0?rate:44100;
             ctx->block_align=block_align;
+            if(extra_size>0){
+              ctx->extradata=av_mallocz((size_t)extra_size+AV_INPUT_BUFFER_PADDING_SIZE);
+              if(!ctx->extradata) return -6;
+              memcpy(ctx->extradata,extra,(size_t)extra_size);
+              ctx->extradata_size=extra_size;
+            }
             if (avcodec_open2(ctx,codec,0)<0) return -3;
             pkt=av_packet_alloc();frame=av_frame_alloc();
             if (!pkt||!frame) return -4;
             last_channels=channels>0?channels:2;
             last_rate=rate>0?rate:44100;
             return 0;
+          }
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_init(int channels,int rate,int block_align){
+            return frame_atrac3p_init_with_extradata(channels,rate,block_align,0,0);
           }
           EMSCRIPTEN_KEEPALIVE int frame_atrac3p_decode_frame(const uint8_t *data,int size,float *out,int capacity) {
             if (!ctx||!pkt||!frame||!data||size<=0||!out||capacity<=0) return -10;
@@ -94,7 +105,7 @@ jobs:
             avcodec_free_context(&ctx);av_packet_free(&pkt);av_frame_free(&frame);
           }
           EOF
-          emcc /tmp/frame_atrac_decoder.c -O2 -Iffmpeg-wasm/include ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a -s MODULARIZE=1 -s EXPORT_NAME=createFrameAtrac3Plus -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s EXPORTED_FUNCTIONS='["_malloc","_free","_frame_atrac3p_available","_frame_atrac3p_init","_frame_atrac3p_decode_frame","_frame_atrac3p_get_channels","_frame_atrac3p_get_sample_rate","_frame_atrac3p_close"]' -o web/frame-atrac3plus-wasm.js
+          emcc /tmp/frame_atrac_decoder.c -O2 -Iffmpeg-wasm/include ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a -s MODULARIZE=1 -s EXPORT_NAME=createFrameAtrac3Plus -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s EXPORTED_FUNCTIONS='["_malloc","_free","_frame_atrac3p_available","_frame_atrac3p_init","_frame_atrac3p_init_with_extradata","_frame_atrac3p_decode_frame","_frame_atrac3p_get_channels","_frame_atrac3p_get_sample_rate","_frame_atrac3p_close"]' -o web/frame-atrac3plus-wasm.js
           test -s web/frame-atrac3plus-wasm.wasm
           grep -q "frame_atrac3p_available" web/frame-atrac3plus-wasm.js
           test -s web/frame-atrac3plus-wasm.js
