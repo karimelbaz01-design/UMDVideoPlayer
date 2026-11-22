@@ -4,7 +4,7 @@ async function load(options={}){
   await new Promise((ok,bad)=>{const s=document.createElement('script');s.src='./frame-atrac3plus-wasm.js';s.onload=ok;s.onerror=()=>bad(Error('Decoder JS non disponibile'));document.head.appendChild(s);});
  }
  const m=await g.createFrameAtrac3Plus({locateFile:p=>'./'+p});
- const available=m.cwrap('frame_atrac3p_available','number',[]);
+ const available=()=>{try{return m.cwrap('frame_atrac3p_available','number',[])();}catch(e){throw Error('Il modulo WASM pubblicato non include ancora frame_atrac3p_available. Attendi la nuova compilazione e aggiorna la pagina.');}};
  const init=m.cwrap('frame_atrac3p_init','number',['number','number','number']);
  const decode=m.cwrap('frame_atrac3p_decode_frame','number',['number','number','number','number']);
  const channels=m.cwrap('frame_atrac3p_get_channels','number',[]);
