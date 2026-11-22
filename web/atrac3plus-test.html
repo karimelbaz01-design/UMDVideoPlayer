@@ -79,7 +79,7 @@ async function findMps(file){
    const path=dir.path+'/'+name;
    if(entries.length<250)entries.push({path,isDir,size,extent});
    if(isDir && queue.length<120)queue.push({extent,size,path});
-   else if(/\\.mps$/i.test(name))found.push({extent,size,path});
+   else if(/\.mps$/i.test(name))found.push({extent,size,path});
    pos+=n;
   }
  }
