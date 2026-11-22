@@ -39,7 +39,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Eq '^#define CONFIG_ATRAC3P_DECODER 1' /tmp/frame-ffmpeg/config.h
+          echo "Inspecting FFmpeg decoder configuration"
+          grep -H 'CONFIG_ATRAC3P_DECODER' /tmp/frame-ffmpeg/config_components.h /tmp/frame-ffmpeg/config.h || true
+          if ! grep -Eq '^#define CONFIG_ATRAC3P_DECODER 1' /tmp/frame-ffmpeg/config_components.h; then
+            echo "::error::ATRAC3plus decoder is not enabled in config_components.h"
+            exit 1
+          fi
+          echo "ATRAC3plus decoder enabled"
           cat > /tmp/frame_probe.c <<'EOF'
           #include <libavcodec/avcodec.h>
           #include <emscripten/emscripten.h>
