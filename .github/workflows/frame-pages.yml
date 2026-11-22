@@ -21,9 +21,40 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate FRAME site files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s web/index.html
+          test -s web/atrac3plus-test.html
+          test -s web/frame-atrac3plus-native.js
+          test -s web/frame-atrac3plus-wasm.js
+          test -s web/frame-atrac3plus-wasm.wasm
+          touch web/.nojekyll
+          echo "FRAME site contents:"
+          ls -lah web/index.html web/atrac3plus-test.html web/frame-atrac3plus-wasm.*
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify published FRAME endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in index.html atrac3plus-test.html frame-atrac3plus-native.js frame-atrac3plus-wasm.js frame-atrac3plus-wasm.wasm; do
+            url="https://karimelbaz01-design.github.io/UMDVideoPlayer/$route"
+            echo "Checking $url"
+            success=0
+            for attempt in 1 2 3 4 5 6; do
+              code=$(curl -L -s -o /dev/null -w '%{http_code}' --max-time 20 "$url" || true)
+              if [ "$code" = "200" ]; then success=1; break; fi
+              echo "Attempt $attempt: HTTP $code"
+              sleep 10
+            done
+            if [ "$success" -ne 1 ]; then
+              echo "::error::Published FRAME route $route is not accessible"
+              exit 1
+            fi
+          done
