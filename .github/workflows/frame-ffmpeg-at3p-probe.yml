@@ -1,6 +1,10 @@
 name: FRAME ATRAC3plus WebAssembly build
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/frame-ffmpeg-at3p-probe.yml'
 permissions:
   contents: read
 jobs:
