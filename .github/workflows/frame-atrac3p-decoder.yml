@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths: ['.github/workflows/frame-atrac3p-decoder.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -103,3 +103,17 @@ jobs:
             web/frame-atrac3plus-wasm.js
             web/frame-atrac3plus-wasm.wasm
           if-no-files-found: error
+      - name: Publish compiled WASM to repository
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/frame-atrac3plus-wasm.js web/frame-atrac3plus-wasm.wasm
+          if git diff --cached --quiet; then
+            echo "Compiled WASM already present"
+          else
+            git commit -m "Build: publish FRAME ATRAC3plus WASM binaries"
+            git push origin HEAD:main
+          fi
