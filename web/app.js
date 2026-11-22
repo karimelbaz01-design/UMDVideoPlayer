@@ -122,3 +122,19 @@ $('inspectFile').onchange=async e=>{
 
 if('serviceWorker' in navigator&&location.protocol==='https:')window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
 $('player').addEventListener('error',()=>{const err=$('player').error;notice('Il video non è riproducibile in questo browser'+(err?' (errore '+err.code+')':'')+'. Prova un formato H.264/AAC compatibile.');});
+
+// FRAME: test the real FFmpeg WebAssembly decoder from the main WATCH interface.
+const atracTestButton=$('testAtracDecoder');
+if(atracTestButton){
+ atracTestButton.addEventListener('click',async()=>{
+  const report=$('atracDecoderReport');
+  atracTestButton.disabled=true;report.textContent='Caricamento del modulo ATRAC3plus…';
+  let decoder;
+  try{
+   if(!window.FrameAtrac3PlusNative)throw Error('Bridge ATRAC3plus non caricato');
+   decoder=await window.FrameAtrac3PlusNative.load({channels:2,sampleRate:44100});
+   report.textContent='OK: decoder FFmpeg ATRAC3plus caricato e inizializzato. Il test audio con un vero pacchetto UMD resta da effettuare.';
+  }catch(error){report.textContent='Errore decoder: '+(error?.message||String(error));}
+  finally{decoder?.dispose();atracTestButton.disabled=false;}
+ });
+}
