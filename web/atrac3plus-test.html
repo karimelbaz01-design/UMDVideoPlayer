@@ -62,7 +62,7 @@ async function findMps(file){
  const signature=String.fromCharCode(...vd.subarray(1,6));
  if(vd[0]!==1||signature!=='CD001'||vd[6]!==1)throw Error('Volume ISO9660 standard non riconosciuto (PVD/CD001).');
  const root=vd.subarray(156,190),queue=[{extent:le32(root,2),size:le32(root,10),path:''}];
- const found=[];let visited=0;
+ const found=[],entries=[];let visited=0;
  while(queue.length && visited<120 && found.length<30){
   const dir=queue.shift();visited++;
   if(!dir.size||dir.size>8*1024*1024)continue;
@@ -77,19 +77,20 @@ async function findMps(file){
    const name=String.fromCharCode(...raw).replace(/;[0-9]+$/,'');
    const extent=le32(data,pos+2),size=le32(data,pos+10),isDir=!!(data[pos+25]&2);
    const path=dir.path+'/'+name;
+   if(entries.length<250)entries.push({path,isDir,size,extent});
    if(isDir && queue.length<120)queue.push({extent,size,path});
    else if(/\\.mps$/i.test(name))found.push({extent,size,path});
    pos+=n;
   }
  }
- return {found,visited};
+ return {found,visited,entries};
 }
 document.getElementById('iso').onchange=async e=>{
  const file=e.target.files?.[0],status=document.getElementById('isoStatus');if(!file)return;
  status.textContent='Lettura indice ISO9660…';
  try{
-  const {found,visited}=await findMps(file);
-  if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate. Il disco potrebbe usare una struttura diversa oppure richiedere un parser aggiuntivo.';return;}
+  const {found,visited,entries}=await findMps(file);
+  if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate.\\n\\nContenuto ISO9660 ('+entries.length+' voci):\\n'+entries.map(x=>(x.isDir?'[DIR] ':'[FILE] ')+x.path+(x.isDir?'':' ('+x.size+' byte)')).join('\\n')+'\\n\\nInvia uno screenshot o copia questo elenco: possiamo individuare dove sono realmente i flussi UMD.';return;}
   const mps=found[0];
   status.textContent='Trovati '+found.length+' file .MPS.\\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\\n')+'\\n\\nAnalizzo il primo file: '+mps.path;
   const offset=mps.extent*sector;
