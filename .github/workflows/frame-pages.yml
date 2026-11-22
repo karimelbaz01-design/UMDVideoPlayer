@@ -34,17 +34,26 @@ jobs:
           echo "FRAME site contents:"
           ls -lah web/index.html web/atrac3plus-test.html web/frame-atrac3plus-wasm.*
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Diagnose Pages deployment URL and configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Deployment URL: ${{ steps.deployment.outputs.page_url }}"
+          gh api "repos/$GITHUB_REPOSITORY/pages" --jq '{html_url,build_type,status,source}' || true
       - name: Verify published FRAME endpoints
         shell: bash
         run: |
           set -euo pipefail
           for route in index.html atrac3plus-test.html frame-atrac3plus-native.js frame-atrac3plus-wasm.js frame-atrac3plus-wasm.wasm; do
-            url="https://karimelbaz01-design.github.io/UMDVideoPlayer/$route"
+            base="${{ steps.deployment.outputs.page_url }}"
+            url="${base%/}/$route"
             echo "Checking $url"
             success=0
             for attempt in 1 2 3 4 5 6; do
