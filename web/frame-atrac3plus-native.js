@@ -1,0 +1,35 @@
+(function(g){'use strict';
+async function load(options={}){
+ if(typeof g.createFrameAtrac3Plus!=='function'){
+  await new Promise((ok,bad)=>{const s=document.createElement('script');s.src='./frame-atrac3plus-wasm.js';s.onload=ok;s.onerror=()=>bad(Error('Decoder JS non disponibile'));document.head.appendChild(s);});
+ }
+ const m=await g.createFrameAtrac3Plus({locateFile:p=>'./'+p});
+ const init=m.cwrap('frame_atrac3p_init','number',['number','number','number']);
+ const decode=m.cwrap('frame_atrac3p_decode_frame','number',['number','number','number','number']);
+ const channels=m.cwrap('frame_atrac3p_get_channels','number',[]);
+ const rate=m.cwrap('frame_atrac3p_get_sample_rate','number',[]);
+ const close=m.cwrap('frame_atrac3p_close',null,[]);
+ const ch=options.channels||2, sampleRate=options.sampleRate||44100;
+ const rc=init(ch,sampleRate,options.blockAlign||0);
+ if(rc!==0)throw Error('ATRAC3plus init error '+rc);
+ const capacity=65536, out=m._malloc(capacity*4);
+ if(!out){close();throw Error('Allocazione PCM fallita');}
+ let disposed=false;
+ return {decode(packet){
+   if(disposed)throw Error('Decoder chiuso');
+   const bytes=packet instanceof Uint8Array?packet:new Uint8Array(packet);
+   const ptr=m._malloc(bytes.byteLength);
+   if(!ptr)throw Error('Allocazione packet fallita');
+   try{
+     m.HEAPU8.set(bytes,ptr);
+     const n=decode(ptr,bytes.byteLength,out,capacity);
+     if(n<0)throw Error('ATRAC3plus decode error '+n);
+     if(n===0)return null;
+     const pcm=new Float32Array(n);
+     pcm.set(m.HEAPF32.subarray(out>>>2,(out>>>2)+n));
+     return {samples:pcm,channels:channels(),sampleRate:rate()};
+   }finally{m._free(ptr);}
+ },dispose(){if(disposed)return;disposed=true;m._free(out);close();}};
+}
+g.FrameAtrac3PlusNative={load};
+})(window);
