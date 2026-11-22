@@ -132,8 +132,8 @@ if(atracTestButton){
   let decoder;
   try{
    if(!window.FrameAtrac3PlusNative)throw Error('Bridge ATRAC3plus non caricato');
-   decoder=await window.FrameAtrac3PlusNative.load({channels:2,sampleRate:44100});
-   report.textContent='OK: decoder FFmpeg ATRAC3plus caricato e inizializzato. Il test audio con un vero pacchetto UMD resta da effettuare.';
+   decoder=await window.FrameAtrac3PlusNative.load({probeOnly:true});
+   report.textContent=decoder.available?'OK: FFmpeg ATRAC3plus disponibile nel modulo WASM. Per inizializzarlo serve ancora il flusso audio reale della ISO UMD.':'Decoder ATRAC3plus non presente nel modulo WASM.';
   }catch(error){report.textContent='Errore decoder: '+(error?.message||String(error));}
   finally{decoder?.dispose();atracTestButton.disabled=false;}
  });
