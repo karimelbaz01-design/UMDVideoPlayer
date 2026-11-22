@@ -90,9 +90,9 @@ document.getElementById('iso').onchange=async e=>{
  status.textContent='Lettura indice ISO9660…';
  try{
   const {found,visited,entries}=await findMps(file);
-  if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate.\\n\\nContenuto ISO9660 ('+entries.length+' voci):\\n'+entries.map(x=>(x.isDir?'[DIR] ':'[FILE] ')+x.path+(x.isDir?'':' ('+x.size+' byte)')).join('\\n')+'\\n\\nInvia uno screenshot o copia questo elenco: possiamo individuare dove sono realmente i flussi UMD.';return;}
+  if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate.\n\nContenuto ISO9660 ('+entries.length+' voci):\n'+entries.map(x=>(x.isDir?'[DIR] ':'[FILE] ')+x.path+(x.isDir?'':' ('+x.size+' byte)')).join('\n')+'\n\nInvia uno screenshot o copia questo elenco: possiamo individuare dove sono realmente i flussi UMD.';return;}
   const mps=found[0];
-  status.textContent='Trovati '+found.length+' file .MPS.\\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\\n')+'\\n\\nAnalizzo il primo file: '+mps.path;
+  status.textContent='Trovati '+found.length+' file .MPS.\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\n')+'\n\nAnalizzo il primo file: '+mps.path;
   const offset=mps.extent*sector;
   if(offset+mps.size>file.size)throw Error('Il file MPS supera i limiti della ISO');
   const virtual={name:mps.path,size:mps.size,slice:(start,end)=>file.slice(offset+start,offset+end)};
