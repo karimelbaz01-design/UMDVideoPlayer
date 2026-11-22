@@ -3,7 +3,7 @@
 <style>body{font:16px system-ui;background:#101018;color:#f6f2fa;padding:22px;max-width:760px;margin:auto;line-height:1.5}button,input{font:inherit}button{background:#c5a5fa;color:#101018;padding:12px;border:0;border-radius:10px}input{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1b1925;padding:15px;border-radius:12px}small{color:#bbb}section{margin:25px 0}</style></head>
 <body><h1>FRAME · Diagnostica UMD Video</h1>
 <section><h2>1. Decoder WebAssembly</h2><p>Verifica la presenza del decoder, non la riproduzione.</p><button id="test">Verifica decoder</button><pre id="result">In attesa.</pre></section>
-<section><h2>2. Apri direttamente una ISO UMD Video</h2><p>Seleziona la ISO dal tuo iPhone. FRAME legge il filesystem ISO9660 localmente, individua i file .MPS e analizza il primo trovato, senza estrarre o caricare il film online.</p><input id="iso" type="file" accept=".iso,.ISO,application/octet-stream"><pre id="isoStatus" aria-live="polite">Nessuna ISO selezionata.</pre></section><section><h2>3. Ispezione dei pacchetti .MPS</h2><p>Seleziona un file <code>.MPS</code> estratto da un UMD Video. La lettura avviene localmente nel browser: non viene caricato su server.</p><input id="file" type="file" accept=".mps,.MPS,application/octet-stream"><p><small>Scansione dei primi 16 MiB; massimo 12 pacchetti PES. I byte visualizzati sono diagnostici e non vengono ancora inviati al decoder.</small></p><pre id="scan" aria-live="polite">Nessun file selezionato.</pre></section>
+<section><h2>2. Apri direttamente una ISO UMD Video</h2><p>Seleziona la ISO dal tuo iPhone. FRAME legge il filesystem ISO9660 localmente, individua i file .MPS e analizza il primo trovato, senza estrarre o caricare il film online.</p><input id="iso" type="file" accept=".iso,.ISO,application/octet-stream"><pre id="isoStatus" aria-live="polite">Nessuna ISO selezionata.</pre></section><section><h2>3. Ispezione dei pacchetti .MPS</h2><p>Seleziona un file <code>.MPS</code> estratto da un UMD Video. La lettura avviene localmente nel browser: non viene caricato su server.</p><input id="file" type="file" accept=".mps,.MPS,application/octet-stream"><p><small>Scansione dei primi 16 MiB; massimo 12 pacchetti PES. I byte visualizzati sono diagnostici e non vengono ancora inviati al decoder.</small></p><pre id="scan" aria-live="polite">Nessun file selezionato.</pre><button id="copyReport" type="button">Copia rapporto audio</button></section>
 <script src="./frame-atrac3plus-native.js?v=20261122-extradata"></script>
 <script>
 'use strict';
@@ -20,7 +20,7 @@ async function inspectMps(file){
  try{
   const max=16*1024*1024;
   const bytes=new Uint8Array(await file.slice(0,Math.min(file.size,max)).arrayBuffer());
-  const rows=[];let count=0,other=0,invalid=0;
+  const rows=[];let count=0,other=0,invalid=0;const substreams=new Map();
   // MPEG-PS packet start codes: 00 00 01 xx. Only inspect bounded PES payloads.
   for(let i=0;i+9<bytes.length && count<12;){
    if(bytes[i]!==0||bytes[i+1]!==0||bytes[i+2]!==1){i++;continue;}
@@ -36,6 +36,7 @@ async function inspectMps(file){
    const payloadStart=headerSize!==null?i+6+headerSize:null;
    const valid=payloadStart!==null&&payloadStart<=end;
    if(!valid)invalid++;
+   if(valid && payloadStart<end){const sid=bytes[payloadStart];substreams.set(sid,(substreams.get(sid)||0)+1);}
    const payload=valid?bytes.subarray(payloadStart,Math.min(end,payloadStart+32)):new Uint8Array();
    rows.push('PES '+(count+1)+' @0x'+i.toString(16)+' | lunghezza '+len+
     '\nHeader MPEG-2: '+(mpeg2?'sì':'non confermato')+
@@ -46,9 +47,10 @@ async function inspectMps(file){
   }
   el.textContent='File: '+file.name+' ('+file.size+' byte)\nScansionati: '+bytes.length+' byte\nPacchetti 0xBD trovati: '+count+'\nHeader non analizzati/incompleti: '+invalid+
    '\n\n'+(rows.length?rows.join('\n\n'):'Nessun pacchetto 0xBD trovato nella porzione analizzata.')+
-   '\n\nNota: il primo byte del payload NON è automaticamente un subStreamId; il formato PSP va confermato prima di rimuovere byte o calcolare block_align.';
+   '\n\nPrimi byte payload per valore (candidati, NON tracce confermate): '+Array.from(substreams,([id,n])=>'0x'+id.toString(16).padStart(2,'0')+'='+n).join(', ')+ '\n\nNota: il primo byte del payload NON è automaticamente un subStreamId; il formato PSP va confermato prima di rimuovere byte o calcolare block_align.';
  }catch(err){el.textContent='Errore lettura file: '+err.message;}
 }
+document.getElementById('copyReport').onclick=()=>{const report=document.getElementById('isoStatus').textContent+'\n\n'+document.getElementById('scan').textContent;if(navigator.clipboard?.writeText)navigator.clipboard.writeText(report).catch(()=>window.prompt('Copia il rapporto:',report));else window.prompt('Copia il rapporto:',report);};
 document.getElementById('file').onchange=e=>{const f=e.target.files?.[0];if(f)inspectMps(f);};
 // ISO9660 primary volume descriptor and bounded directory traversal; never load the entire ISO.
 const sector=2048;
@@ -91,14 +93,14 @@ document.getElementById('iso').onchange=async e=>{
  try{
   const {found,visited,entries}=await findMps(file);
   if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate.\n\nContenuto ISO9660 ('+entries.length+' voci):\n'+entries.map(x=>(x.isDir?'[DIR] ':'[FILE] ')+x.path+(x.isDir?'':' ('+x.size+' byte)')).join('\n')+'\n\nInvia uno screenshot o copia questo elenco: possiamo individuare dove sono realmente i flussi UMD.';return;}
-  const mps=found[0];
+  const mps=found.slice().sort((a,b)=>b.size-a.size)[0];
   status.textContent='Trovati '+found.length+' file .MPS.\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\n')+'\n\nAnalizzo il primo file: '+mps.path;
   const offset=mps.extent*sector;
   const available=Math.max(0,file.size-offset);
   const sampleSize=Math.min(mps.size,available,16*1024*1024);
   status.textContent+='\n\nISO: '+file.size+' byte; MPS offset: '+offset+'; dimensione dichiarata: '+mps.size+'; byte accessibili: '+available+'.';
   if(!available)throw Error('Il primo MPS inizia oltre la fine della ISO selezionata. Verificare che il file ISO sia completo.');
-  if(available<mps.size)status.textContent+='\nATTENZIONE: la ISO selezionata termina prima della fine del MPS dichiarato. Analisi limitata ai byte realmente disponibili.';
+  if(available<mps.size)status.textContent+='\nNota: il MPS dichiara più byte di quelli accessibili nella ISO selezionata. La causa non è ancora determinata; l’analisi prosegue sui byte iniziali.';
   const virtual={name:mps.path,size:sampleSize,slice:(start,end)=>file.slice(offset+start,offset+end)};
   await inspectMps(virtual);
  }catch(err){status.textContent='Errore ISO: '+err.message;}
