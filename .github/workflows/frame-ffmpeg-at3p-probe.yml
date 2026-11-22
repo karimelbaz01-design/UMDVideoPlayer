@@ -1,0 +1,65 @@
+name: FRAME ATRAC3plus WebAssembly build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: '3.1.74'
+      - name: Verify Emscripten
+        run: |
+          emcc --version
+          command -v emconfigure
+          command -v emmake
+      - name: Build real FFmpeg ATRAC3plus libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch n7.1.2 https://github.com/FFmpeg/FFmpeg.git /tmp/frame-ffmpeg
+          mkdir -p "$GITHUB_WORKSPACE/ffmpeg-wasm"
+          cd /tmp/frame-ffmpeg
+          emconfigure ./configure \
+            --prefix="$GITHUB_WORKSPACE/ffmpeg-wasm" \
+            --target-os=none --arch=wasm32 --cc=emcc --cxx=em++ --ar=emar --ranlib=emranlib \
+            --disable-x86asm --disable-asm --disable-stripping --disable-programs \
+            --disable-doc --disable-network --disable-autodetect --disable-everything \
+            --disable-shared --enable-static --enable-avcodec --enable-avutil \
+            --enable-decoder=atrac3p --enable-small --disable-pthreads
+          emmake make -j2
+          emmake make install
+          test -s "$GITHUB_WORKSPACE/ffmpeg-wasm/lib/libavcodec.a"
+          test -s "$GITHUB_WORKSPACE/ffmpeg-wasm/lib/libavutil.a"
+      - name: Verify decoder and build integration artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Eq '^#define CONFIG_ATRAC3P_DECODER 1' /tmp/frame-ffmpeg/config.h
+          cat > /tmp/frame_probe.c <<'EOF'
+          #include <libavcodec/avcodec.h>
+          #include <emscripten/emscripten.h>
+          EMSCRIPTEN_KEEPALIVE int frame_has_atrac3p(void) {
+            return avcodec_find_decoder(AV_CODEC_ID_ATRAC3P) != 0;
+          }
+          EOF
+          mkdir -p web
+          emcc /tmp/frame_probe.c -O2 -Iffmpeg-wasm/include \
+            ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a \
+            -s MODULARIZE=1 -s EXPORT_NAME=createFrameFFmpegProbe \
+            -s ALLOW_MEMORY_GROWTH=1 \
+            -s EXPORTED_FUNCTIONS='["_frame_has_atrac3p"]' \
+            -o web/frame-ffmpeg-at3p-probe.js
+          test -s web/frame-ffmpeg-at3p-probe.wasm
+          test -s web/frame-ffmpeg-at3p-probe.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frame-ffmpeg-at3p-wasm-probe
+          path: |
+            web/frame-ffmpeg-at3p-probe.js
+            web/frame-ffmpeg-at3p-probe.wasm
+          if-no-files-found: error
