@@ -1,1 +1,52 @@
-<!doctype html><html lang="it"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FRAME — ATRAC3plus diagnostica</title><style>body{font:16px system-ui;background:#101018;color:#f6f2fa;padding:24px;max-width:720px;margin:auto}button{background:#c5a5fa;color:#101018;padding:12px;border:0;border-radius:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style><h1>FRAME · ATRAC3plus</h1><p>Verifica che il decoder ATRAC3plus sia presente nel modulo WASM. Il test non prova la riproduzione di un film UMD.</p><button id="test">Verifica decoder</button><pre id="result">In attesa.</pre><script src="./frame-atrac3plus-native.js?v=fix-20261122-2"></script><script>document.getElementById('test').onclick=async()=>{const el=document.getElementById('result');el.textContent='Caricamento WASM (test aggiornato)…';try{const d=await FrameAtrac3PlusNative.load({probeOnly:true});el.textContent=d.available?'OK: decoder ATRAC3plus presente nel WASM.':'Decoder ATRAC3plus non disponibile nel WASM.';d.dispose();}catch(e){el.textContent='Errore: '+e.message;}};</script></html>
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FRAME — diagnostica UMD ATRAC3plus</title>
+<style>body{font:16px system-ui;background:#101018;color:#f6f2fa;padding:22px;max-width:760px;margin:auto;line-height:1.5}button,input{font:inherit}button{background:#c5a5fa;color:#101018;padding:12px;border:0;border-radius:10px}input{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1b1925;padding:15px;border-radius:12px}small{color:#bbb}section{margin:25px 0}</style></head>
+<body><h1>FRAME · Diagnostica UMD Video</h1>
+<section><h2>1. Decoder WebAssembly</h2><p>Verifica la presenza del decoder, non la riproduzione.</p><button id="test">Verifica decoder</button><pre id="result">In attesa.</pre></section>
+<section><h2>2. Ispezione dei pacchetti .MPS</h2><p>Seleziona un file <code>.MPS</code> estratto da un UMD Video. La lettura avviene localmente nel browser: non viene caricato su server.</p><input id="file" type="file" accept=".mps,.MPS,application/octet-stream"><p><small>Scansione dei primi 16 MiB; massimo 12 pacchetti PES. I byte visualizzati sono diagnostici e non vengono ancora inviati al decoder.</small></p><pre id="scan" aria-live="polite">Nessun file selezionato.</pre></section>
+<script src="./frame-atrac3plus-native.js?v=20261122-extradata"></script>
+<script>
+'use strict';
+document.getElementById('test').onclick=async()=>{
+ const el=document.getElementById('result');el.textContent='Caricamento WASM…';
+ try{const d=await FrameAtrac3PlusNative.load({probeOnly:true});el.textContent=d.available?'OK: decoder ATRAC3plus presente nel WASM.':'Decoder non disponibile.';d.dispose();}
+ catch(e){el.textContent='Errore: '+e.message;}
+};
+const hex=a=>Array.from(a,b=>b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+document.getElementById('file').onchange=async(e)=>{
+ const el=document.getElementById('scan'),file=e.target.files?.[0];
+ if(!file)return;
+ el.textContent='Lettura dei primi byte…';
+ try{
+  const max=16*1024*1024;
+  const bytes=new Uint8Array(await file.slice(0,Math.min(file.size,max)).arrayBuffer());
+  const rows=[];let count=0,other=0,invalid=0;
+  // MPEG-PS packet start codes: 00 00 01 xx. Only inspect bounded PES payloads.
+  for(let i=0;i+9<bytes.length && count<12;){
+   if(bytes[i]!==0||bytes[i+1]!==0||bytes[i+2]!==1){i++;continue;}
+   const id=bytes[i+3];
+   if(id!==0xbd){i+=4;continue;}
+   const len=(bytes[i+4]<<8)|bytes[i+5];
+   if(!len){invalid++;i+=6;continue;}
+   const end=i+6+len;
+   if(end>bytes.length){invalid++;break;}
+   // MPEG-2 PES: 2 flag bytes and a header_data_length.
+   const mpeg2=(bytes[i+6]&0xc0)===0x80;
+   const headerSize=mpeg2?3+bytes[i+8]:null;
+   const payloadStart=headerSize!==null?i+6+headerSize:null;
+   const valid=payloadStart!==null&&payloadStart<=end;
+   if(!valid)invalid++;
+   const payload=valid?bytes.subarray(payloadStart,Math.min(end,payloadStart+32)):new Uint8Array();
+   rows.push('PES '+(count+1)+' @0x'+i.toString(16)+' | lunghezza '+len+
+    '\nHeader MPEG-2: '+(mpeg2?'sì':'non confermato')+
+    ' | payload offset: '+(valid?'0x'+payloadStart.toString(16):'non determinato')+
+    '\nPrimi byte payload: '+(valid?hex(payload):'non disponibili')+
+    '\nByte iniziale: '+(valid&&payload.length?'0x'+payload[0].toString(16).padStart(2,'0'):'?'));
+   count++;i=end;
+  }
+  el.textContent='File: '+file.name+' ('+file.size+' byte)\nScansionati: '+bytes.length+' byte\nPacchetti 0xBD trovati: '+count+'\nHeader non analizzati/incompleti: '+invalid+
+   '\n\n'+(rows.length?rows.join('\n\n'):'Nessun pacchetto 0xBD trovato nella porzione analizzata.')+
+   '\n\nNota: il primo byte del payload NON è automaticamente un subStreamId; il formato PSP va confermato prima di rimuovere byte o calcolare block_align.';
+ }catch(err){el.textContent='Errore lettura file: '+err.message;}
+};
+</script></body></html>
