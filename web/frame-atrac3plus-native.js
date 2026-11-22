@@ -4,11 +4,13 @@ async function load(options={}){
   await new Promise((ok,bad)=>{const s=document.createElement('script');s.src='./frame-atrac3plus-wasm.js';s.onload=ok;s.onerror=()=>bad(Error('Decoder JS non disponibile'));document.head.appendChild(s);});
  }
  const m=await g.createFrameAtrac3Plus({locateFile:p=>'./'+p});
+ const available=m.cwrap('frame_atrac3p_available','number',[]);
  const init=m.cwrap('frame_atrac3p_init','number',['number','number','number']);
  const decode=m.cwrap('frame_atrac3p_decode_frame','number',['number','number','number','number']);
  const channels=m.cwrap('frame_atrac3p_get_channels','number',[]);
  const rate=m.cwrap('frame_atrac3p_get_sample_rate','number',[]);
  const close=m.cwrap('frame_atrac3p_close',null,[]);
+ if(options.probeOnly)return {available:available()===1,dispose(){}};
  const ch=options.channels||2, sampleRate=options.sampleRate||44100;
  const rc=init(ch,sampleRate,options.blockAlign||0);
  if(rc!==0)throw Error('ATRAC3plus init error '+rc);
