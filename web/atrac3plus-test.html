@@ -94,8 +94,12 @@ document.getElementById('iso').onchange=async e=>{
   const mps=found[0];
   status.textContent='Trovati '+found.length+' file .MPS.\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\n')+'\n\nAnalizzo il primo file: '+mps.path;
   const offset=mps.extent*sector;
-  if(offset+mps.size>file.size)throw Error('Il file MPS supera i limiti della ISO');
-  const virtual={name:mps.path,size:mps.size,slice:(start,end)=>file.slice(offset+start,offset+end)};
+  const available=Math.max(0,file.size-offset);
+  const sampleSize=Math.min(mps.size,available,16*1024*1024);
+  status.textContent+='\n\nISO: '+file.size+' byte; MPS offset: '+offset+'; dimensione dichiarata: '+mps.size+'; byte accessibili: '+available+'.';
+  if(!available)throw Error('Il primo MPS inizia oltre la fine della ISO selezionata. Verificare che il file ISO sia completo.');
+  if(available<mps.size)status.textContent+='\nATTENZIONE: la ISO selezionata termina prima della fine del MPS dichiarato. Analisi limitata ai byte realmente disponibili.';
+  const virtual={name:mps.path,size:sampleSize,slice:(start,end)=>file.slice(offset+start,offset+end)};
   await inspectMps(virtual);
  }catch(err){status.textContent='Errore ISO: '+err.message;}
 };
