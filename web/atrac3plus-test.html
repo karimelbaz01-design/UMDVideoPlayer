@@ -3,7 +3,7 @@
 <style>body{font:16px system-ui;background:#101018;color:#f6f2fa;padding:22px;max-width:760px;margin:auto;line-height:1.5}button,input{font:inherit}button{background:#c5a5fa;color:#101018;padding:12px;border:0;border-radius:10px}input{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#1b1925;padding:15px;border-radius:12px}small{color:#bbb}section{margin:25px 0}</style></head>
 <body><h1>FRAME · Diagnostica UMD Video</h1>
 <section><h2>1. Decoder WebAssembly</h2><p>Verifica la presenza del decoder, non la riproduzione.</p><button id="test">Verifica decoder</button><pre id="result">In attesa.</pre></section>
-<section><h2>2. Ispezione dei pacchetti .MPS</h2><p>Seleziona un file <code>.MPS</code> estratto da un UMD Video. La lettura avviene localmente nel browser: non viene caricato su server.</p><input id="file" type="file" accept=".mps,.MPS,application/octet-stream"><p><small>Scansione dei primi 16 MiB; massimo 12 pacchetti PES. I byte visualizzati sono diagnostici e non vengono ancora inviati al decoder.</small></p><pre id="scan" aria-live="polite">Nessun file selezionato.</pre></section>
+<section><h2>2. Apri direttamente una ISO UMD Video</h2><p>Seleziona la ISO dal tuo iPhone. FRAME legge il filesystem ISO9660 localmente, individua i file .MPS e analizza il primo trovato, senza estrarre o caricare il film online.</p><input id="iso" type="file" accept=".iso,.ISO,application/octet-stream"><pre id="isoStatus" aria-live="polite">Nessuna ISO selezionata.</pre></section><section><h2>3. Ispezione dei pacchetti .MPS</h2><p>Seleziona un file <code>.MPS</code> estratto da un UMD Video. La lettura avviene localmente nel browser: non viene caricato su server.</p><input id="file" type="file" accept=".mps,.MPS,application/octet-stream"><p><small>Scansione dei primi 16 MiB; massimo 12 pacchetti PES. I byte visualizzati sono diagnostici e non vengono ancora inviati al decoder.</small></p><pre id="scan" aria-live="polite">Nessun file selezionato.</pre></section>
 <script src="./frame-atrac3plus-native.js?v=20261122-extradata"></script>
 <script>
 'use strict';
@@ -13,8 +13,8 @@ document.getElementById('test').onclick=async()=>{
  catch(e){el.textContent='Errore: '+e.message;}
 };
 const hex=a=>Array.from(a,b=>b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-document.getElementById('file').onchange=async(e)=>{
- const el=document.getElementById('scan'),file=e.target.files?.[0];
+async function inspectMps(file){
+ const el=document.getElementById('scan');
  if(!file)return;
  el.textContent='Lettura dei primi byte…';
  try{
@@ -48,5 +48,54 @@ document.getElementById('file').onchange=async(e)=>{
    '\n\n'+(rows.length?rows.join('\n\n'):'Nessun pacchetto 0xBD trovato nella porzione analizzata.')+
    '\n\nNota: il primo byte del payload NON è automaticamente un subStreamId; il formato PSP va confermato prima di rimuovere byte o calcolare block_align.';
  }catch(err){el.textContent='Errore lettura file: '+err.message;}
+}
+document.getElementById('file').onchange=e=>{const f=e.target.files?.[0];if(f)inspectMps(f);};
+// ISO9660 primary volume descriptor and bounded directory traversal; never load the entire ISO.
+const sector=2048;
+const le32=(a,i)=>(a[i]+a[i+1]*256+a[i+2]*65536+a[i+3]*16777216)>>>0;
+async function readIso(file,offset,length){
+ if(offset<0||length<0||offset+length>file.size)throw Error('Intervallo ISO non valido');
+ return new Uint8Array(await file.slice(offset,offset+length).arrayBuffer());
+}
+async function findMps(file){
+ const vd=await readIso(file,16*sector,sector);
+ const signature=String.fromCharCode(...vd.subarray(1,6));
+ if(vd[0]!==1||signature!=='CD001'||vd[6]!==1)throw Error('Volume ISO9660 standard non riconosciuto (PVD/CD001).');
+ const root=vd.subarray(156,190),queue=[{extent:le32(root,2),size:le32(root,10),path:''}];
+ const found=[];let visited=0;
+ while(queue.length && visited<120 && found.length<30){
+  const dir=queue.shift();visited++;
+  if(!dir.size||dir.size>8*1024*1024)continue;
+  const data=await readIso(file,dir.extent*sector,dir.size);
+  for(let pos=0;pos<data.length;){
+   const n=data[pos];if(!n){pos=(Math.floor(pos/sector)+1)*sector;continue;}
+   if(n<34||pos+n>data.length)break;
+   const nameLen=data[pos+32];
+   if(33+nameLen>n){pos+=n;continue;}
+   const raw=data.subarray(pos+33,pos+33+nameLen);
+   if(nameLen===1&&(raw[0]===0||raw[0]===1)){pos+=n;continue;}
+   const name=String.fromCharCode(...raw).replace(/;[0-9]+$/,'');
+   const extent=le32(data,pos+2),size=le32(data,pos+10),isDir=!!(data[pos+25]&2);
+   const path=dir.path+'/'+name;
+   if(isDir && queue.length<120)queue.push({extent,size,path});
+   else if(/\\.mps$/i.test(name))found.push({extent,size,path});
+   pos+=n;
+  }
+ }
+ return {found,visited};
+}
+document.getElementById('iso').onchange=async e=>{
+ const file=e.target.files?.[0],status=document.getElementById('isoStatus');if(!file)return;
+ status.textContent='Lettura indice ISO9660…';
+ try{
+  const {found,visited}=await findMps(file);
+  if(!found.length){status.textContent='Nessun .MPS trovato nelle '+visited+' cartelle analizzate. Il disco potrebbe usare una struttura diversa oppure richiedere un parser aggiuntivo.';return;}
+  const mps=found[0];
+  status.textContent='Trovati '+found.length+' file .MPS.\\n'+found.slice(0,12).map(x=>x.path+' ('+x.size+' byte)').join('\\n')+'\\n\\nAnalizzo il primo file: '+mps.path;
+  const offset=mps.extent*sector;
+  if(offset+mps.size>file.size)throw Error('Il file MPS supera i limiti della ISO');
+  const virtual={name:mps.path,size:mps.size,slice:(start,end)=>file.slice(offset+start,offset+end)};
+  await inspectMps(virtual);
+ }catch(err){status.textContent='Errore ISO: '+err.message;}
 };
 </script></body></html>
