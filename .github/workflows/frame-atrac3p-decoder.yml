@@ -42,6 +42,7 @@ jobs:
           static AVFrame *frame;
           static int last_rate;
           static int last_channels;
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_available(void) { return avcodec_find_decoder(AV_CODEC_ID_ATRAC3P) != 0; }
           EMSCRIPTEN_KEEPALIVE int frame_atrac3p_init(int channels,int rate,int block_align) {
             const AVCodec *codec=avcodec_find_decoder(AV_CODEC_ID_ATRAC3P);
             if (!codec) return -1;
@@ -93,7 +94,7 @@ jobs:
             avcodec_free_context(&ctx);av_packet_free(&pkt);av_frame_free(&frame);
           }
           EOF
-          emcc /tmp/frame_atrac_decoder.c -O2 -Iffmpeg-wasm/include ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a -s MODULARIZE=1 -s EXPORT_NAME=createFrameAtrac3Plus -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s EXPORTED_FUNCTIONS='["_malloc","_free","_frame_atrac3p_init","_frame_atrac3p_decode_frame","_frame_atrac3p_get_channels","_frame_atrac3p_get_sample_rate","_frame_atrac3p_close"]' -o web/frame-atrac3plus-wasm.js
+          emcc /tmp/frame_atrac_decoder.c -O2 -Iffmpeg-wasm/include ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a -s MODULARIZE=1 -s EXPORT_NAME=createFrameAtrac3Plus -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s EXPORTED_FUNCTIONS='["_malloc","_free","_frame_atrac3p_available","_frame_atrac3p_init","_frame_atrac3p_decode_frame","_frame_atrac3p_get_channels","_frame_atrac3p_get_sample_rate","_frame_atrac3p_close"]' -o web/frame-atrac3plus-wasm.js
           test -s web/frame-atrac3plus-wasm.wasm
           test -s web/frame-atrac3plus-wasm.js
       - uses: actions/upload-artifact@v4
