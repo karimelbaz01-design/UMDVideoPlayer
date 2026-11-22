@@ -5,15 +5,23 @@ async function load(options={}){
  }
  const m=await g.createFrameAtrac3Plus({locateFile:p=>'./'+p+'?v=fix-20261122-2'});
  const available=()=>{try{return m.cwrap('frame_atrac3p_available','number',[])();}catch(e){throw Error('Il modulo WASM pubblicato non include ancora frame_atrac3p_available. Attendi la nuova compilazione e aggiorna la pagina.');}};
- const init=m.cwrap('frame_atrac3p_init','number',['number','number','number']);
+ const init=m.cwrap('frame_atrac3p_init_with_extradata','number',['number','number','number','number','number']);
  const decode=m.cwrap('frame_atrac3p_decode_frame','number',['number','number','number','number']);
  const channels=m.cwrap('frame_atrac3p_get_channels','number',[]);
  const rate=m.cwrap('frame_atrac3p_get_sample_rate','number',[]);
  const close=m.cwrap('frame_atrac3p_close',null,[]);
  if(options.probeOnly)return {available:available()===1,dispose(){}};
  const ch=options.channels||2, sampleRate=options.sampleRate||44100;
- const rc=init(ch,sampleRate,options.blockAlign||0);
- if(rc!==0)throw Error('ATRAC3plus init error '+rc);
+ const extra=options.extradata?new Uint8Array(options.extradata):new Uint8Array(0);
+ if(extra.length>65536)throw Error('Extradata troppo grande');
+ const extraPtr=extra.length?m._malloc(extra.length):0;
+ if(extra.length&&!extraPtr)throw Error('Allocazione extradata fallita');
+ let rc;
+ try{
+  if(extra.length)m.HEAPU8.set(extra,extraPtr);
+  rc=init(ch,sampleRate,options.blockAlign||0,extraPtr,extra.length);
+ }finally{if(extraPtr)m._free(extraPtr);}
+ if(rc!==0){close();throw Error('ATRAC3plus init error '+rc+' (verificare parametri ed extradata del flusso UMD)');}
  const capacity=65536, out=m._malloc(capacity*4);
  if(!out){close();throw Error('Allocazione PCM fallita');}
  let disposed=false;
