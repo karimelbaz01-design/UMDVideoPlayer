@@ -1,0 +1,105 @@
+name: FRAME ATRAC3plus actual WASM decoder
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/frame-atrac3p-decoder.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: '3.1.74'
+      - name: Compile FFmpeg ATRAC3plus
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch n7.1.2 https://github.com/FFmpeg/FFmpeg.git /tmp/ffmpeg
+          cd /tmp/ffmpeg
+          emconfigure ./configure --prefix="$GITHUB_WORKSPACE/ffmpeg-wasm" --target-os=none --arch=wasm32 --cc=emcc --cxx=em++ --ar=emar --ranlib=emranlib --disable-x86asm --disable-asm --disable-stripping --disable-programs --disable-doc --disable-network --disable-autodetect --disable-everything --disable-shared --enable-static --enable-avcodec --enable-avutil --enable-decoder=atrac3p --enable-small --disable-pthreads
+          emmake make -j2
+          emmake make install
+          grep -Eq '^#define CONFIG_ATRAC3P_DECODER 1' config_components.h
+      - name: Generate real decode API
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p web
+          cat > /tmp/frame_atrac_decoder.c <<'EOF'
+          #include <stdint.h>
+          #include <string.h>
+          #include <libavcodec/avcodec.h>
+          #include <libavutil/channel_layout.h>
+          #include <libavutil/samplefmt.h>
+          #include <emscripten/emscripten.h>
+          static AVCodecContext *ctx;
+          static AVPacket *pkt;
+          static AVFrame *frame;
+          static int last_rate;
+          static int last_channels;
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_init(int channels,int rate,int block_align) {
+            const AVCodec *codec=avcodec_find_decoder(AV_CODEC_ID_ATRAC3P);
+            if (!codec) return -1;
+            if (ctx) {avcodec_free_context(&ctx);av_packet_free(&pkt);av_frame_free(&frame);}
+            ctx=avcodec_alloc_context3(codec);
+            if (!ctx) return -2;
+            av_channel_layout_default(&ctx->ch_layout,channels>0?channels:2);
+            ctx->sample_rate=rate>0?rate:44100;
+            ctx->block_align=block_align;
+            if (avcodec_open2(ctx,codec,0)<0) return -3;
+            pkt=av_packet_alloc();frame=av_frame_alloc();
+            if (!pkt||!frame) return -4;
+            last_channels=channels>0?channels:2;
+            last_rate=rate>0?rate:44100;
+            return 0;
+          }
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_decode_frame(const uint8_t *data,int size,float *out,int capacity) {
+            if (!ctx||!pkt||!frame||!data||size<=0||!out||capacity<=0) return -10;
+            av_packet_unref(pkt);
+            if (av_new_packet(pkt,size)<0) return -11;
+            memcpy(pkt->data,data,size);
+            int rc=avcodec_send_packet(ctx,pkt);
+            av_packet_unref(pkt);
+            if (rc<0) return -12;
+            rc=avcodec_receive_frame(ctx,frame);
+            if (rc==AVERROR(EAGAIN)||rc==AVERROR_EOF) return 0;
+            if (rc<0) return -13;
+            int ch=frame->ch_layout.nb_channels;
+            if (ch<=0||ch>8||frame->nb_samples>capacity/ch) return -14;
+            last_channels=ch;
+            if(frame->sample_rate>0) last_rate=frame->sample_rate;
+            int fmt=frame->format;
+            for(int i=0;i<frame->nb_samples;i++) for(int c=0;c<ch;c++) {
+              float v;
+              if(fmt==AV_SAMPLE_FMT_FLTP) v=((float*)frame->extended_data[c])[i];
+              else if(fmt==AV_SAMPLE_FMT_FLT) v=((float*)frame->extended_data[0])[i*ch+c];
+              else if(fmt==AV_SAMPLE_FMT_S16P) v=((int16_t*)frame->extended_data[c])[i]/32768.0f;
+              else if(fmt==AV_SAMPLE_FMT_S16) v=((int16_t*)frame->extended_data[0])[i*ch+c]/32768.0f;
+              else {av_frame_unref(frame);return -15;}
+              out[i*ch+c]=v;
+            }
+            int written=frame->nb_samples*ch;
+            av_frame_unref(frame);
+            return written;
+          }
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_get_channels(void){return last_channels;}
+          EMSCRIPTEN_KEEPALIVE int frame_atrac3p_get_sample_rate(void){return last_rate;}
+          EMSCRIPTEN_KEEPALIVE void frame_atrac3p_close(void){
+            avcodec_free_context(&ctx);av_packet_free(&pkt);av_frame_free(&frame);
+          }
+          EOF
+          emcc /tmp/frame_atrac_decoder.c -O2 -Iffmpeg-wasm/include ffmpeg-wasm/lib/libavcodec.a ffmpeg-wasm/lib/libavutil.a -s MODULARIZE=1 -s EXPORT_NAME=createFrameAtrac3Plus -s ALLOW_MEMORY_GROWTH=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s EXPORTED_FUNCTIONS='["_malloc","_free","_frame_atrac3p_init","_frame_atrac3p_decode_frame","_frame_atrac3p_get_channels","_frame_atrac3p_get_sample_rate","_frame_atrac3p_close"]' -o web/frame-atrac3plus-wasm.js
+          test -s web/frame-atrac3plus-wasm.wasm
+          test -s web/frame-atrac3plus-wasm.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frame-real-atrac3plus-decoder-wasm
+          path: |
+            web/frame-atrac3plus-wasm.js
+            web/frame-atrac3plus-wasm.wasm
+          if-no-files-found: error
