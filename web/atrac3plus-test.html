@@ -17,19 +17,26 @@ let diagnosticStream=null, diagnosticVideoBytes=null;
 document.getElementById('videoProbe').onclick=()=>{
  const out=document.getElementById('videoStatus'),a=diagnosticVideoBytes;if(!a){out.textContent='Carica prima la ISO.';return;}
  const tracks={video:[],audio:[]},parts=[];let total=0;
- for(let p=14;p+9<a.length;p+=2048){
- if(a[p]||a[p+1]||a[p+2]!==1)continue;
- const id=a[p+3];if(id!==224&&id!==189)continue;
- const end=p+6+((a[p+4]<<8)|a[p+5]),start=p+9+a[p+8];if(end>a.length||start>end||end>p+2034||(a[p+6]&192)!==128)continue;
+ for(let base=0;base+2048<=a.length;base+=2048){
+ const limit=base+2048;
+ for(let p=base+14;p+6<=limit;){
+ if(a[p]||a[p+1]||a[p+2]!==1){p++;continue;}
+ const id=a[p+3];if(id<0xbb){p+=4;continue;}
+ const end=p+6+((a[p+4]<<8)|a[p+5]);if(end>limit||end<=p+6){p+=4;continue;}
+ if((id===224||id===189)&&p+9<=end&&(a[p+6]&192)===128){
+ const start=p+9+a[p+8];if(start<=end){
  if((a[p+7]&128)&&a[p+8]>=5){const q=p+9;if((a[q]&1)&&(a[q+2]&1)&&(a[q+4]&1)){const pts=(a[q]&14)*536870912+a[q+1]*4194304+(a[q+2]&254)*16384+a[q+3]*128+(a[q+4]>>1);tracks[id===224?'video':'audio'].push(pts);}}
  if(id===224){parts.push(a.subarray(start,end));total+=end-start;}
+ }}
+ p=end;
+ }
  }
  const es=new Uint8Array(total);let off=0;for(const p of parts){es.set(p,off);off+=p.length;}
  const preview=[];let prev=-1;for(let i=0;i+4<es.length&&preview.length<24;i++){if(es[i]===0&&es[i+1]===0&&es[i+2]===1){if(prev>=0)preview.push('offset '+prev+'; length '+(i-prev)+'; type '+(es[prev+3]&31)+'; header '+hex(es.subarray(prev+3,Math.min(i,prev+15))));prev=i;i+=3;}}
  const rawParams=[];for(let i=0;i+4<a.length&&rawParams.length<20;i++){if(a[i]===0&&a[i+1]===0&&a[i+2]===1&&[7,8].includes(a[i+3]&31)&&!(a[i+3]&128))rawParams.push('offset '+i+'; sector '+Math.floor(i/2048)+'; header '+hex(a.subarray(i+3,i+15)));}
  const types={};let firstSps=null;for(let i=0;i+4<es.length;i++){if(es[i]===0&&es[i+1]===0&&es[i+2]===1){const n=es[i+3]&31;types[n]=(types[n]||0)+1;if(n===7&&!firstSps)firstSps=hex(es.subarray(i+3,i+12));i+=3;}}
  const desc=t=>t.length?t.length+' PTS; primo '+t[0]+'; ultimo '+t[t.length-1]+'; intervallo '+((Math.max(...t)-Math.min(...t))/90000).toFixed(3)+' s':'nessun PTS';
- out.textContent=['Video PES: '+parts.length,'H.264 estratto: '+total+' byte','NAL Annex B: '+JSON.stringify(types),'SPS: '+(firstSps||'non trovato'),'Video: '+desc(tracks.video),'Audio: '+desc(tracks.audio),'Differenza PTS iniziali (s): '+(tracks.video.length&&tracks.audio.length?((tracks.video[0]-tracks.audio[0])/90000).toFixed(6):'non disponibile'),'WebCodecs VideoDecoder: '+(typeof VideoDecoder!=='undefined'?'presente':'assente'),'Possibili SPS/PPS nel MPS originale (da validare): '+(rawParams.join('; ')||'nessuno'),'Prime NAL estratte:\n'+preview.join('\n'),'Nota: analisi, non ancora riproduzione video.'].join('\n');
+ out.textContent=['Video PES: '+parts.length,'H.264 estratto: '+total+' byte','NAL Annex B: '+JSON.stringify(types),'SPS: '+(firstSps||'non trovato'),'PPS estratti: '+(types[8]||0),'Video: '+desc(tracks.video),'Audio: '+desc(tracks.audio),'Differenza PTS iniziali (s): '+(tracks.video.length&&tracks.audio.length?((tracks.video[0]-tracks.audio[0])/90000).toFixed(6):'non disponibile'),'WebCodecs VideoDecoder: '+(typeof VideoDecoder!=='undefined'?'presente':'assente'),'Possibili SPS/PPS nel MPS originale (da validare): '+(rawParams.join('; ')||'nessuno'),'Prime NAL estratte:\n'+preview.join('\n'),'Nota: analisi, non ancora riproduzione video.'].join('\n');
 };
 document.getElementById('decodeSample').onclick=async()=>{
  const status=document.getElementById('decodeStatus'),audio=document.getElementById('decodedAudio');if(!diagnosticStream||diagnosticStream.length<320*696){status.textContent='Campione insufficiente: carica la ISO.';return;}
