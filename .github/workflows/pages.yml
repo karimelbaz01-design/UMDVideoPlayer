@@ -28,6 +28,18 @@ jobs:
           mkdir -p _site
           cp -R web/. _site/
           touch _site/.nojekyll
+      - name: Install pinned FFmpeg cinema assets
+        run: |
+          mkdir -p /tmp/frame-ffmpeg _site/ffmpeg-cinema/ffmpeg _site/ffmpeg-cinema/core
+          cd /tmp/frame-ffmpeg
+          npm pack @ffmpeg/ffmpeg@0.12.15
+          npm pack @ffmpeg/core@0.12.10
+          tar -xzf ffmpeg-ffmpeg-0.12.15.tgz
+          cp -R package/dist/esm/. "$GITHUB_WORKSPACE/_site/ffmpeg-cinema/ffmpeg/"
+          rm -rf package
+          tar -xzf ffmpeg-core-0.12.10.tgz
+          cp package/dist/esm/ffmpeg-core.js package/dist/esm/ffmpeg-core.wasm "$GITHUB_WORKSPACE/_site/ffmpeg-cinema/core/"
+          test -s "$GITHUB_WORKSPACE/_site/ffmpeg-cinema/core/ffmpeg-core.wasm"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
