@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 concurrency:
@@ -22,8 +23,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: android/frame-port
       - name: Prepare static site
         run: |
           mkdir -p _site
@@ -33,5 +32,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+      - name: Wait for Pages artifact metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 20); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "github-pages" and .expired == false) | .id' | grep -q '[0-9]'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Pages artifact not visible after 100 seconds"
+          exit 1
       - id: deployment
         uses: actions/deploy-pages@v4
