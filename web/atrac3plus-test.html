@@ -25,9 +25,11 @@ document.getElementById('videoProbe').onclick=()=>{
  if(id===224){parts.push(a.subarray(start,end));total+=end-start;}
  }
  const es=new Uint8Array(total);let off=0;for(const p of parts){es.set(p,off);off+=p.length;}
+ const preview=[];let prev=-1;for(let i=0;i+4<es.length&&preview.length<24;i++){if(es[i]===0&&es[i+1]===0&&es[i+2]===1){if(prev>=0)preview.push('offset '+prev+'; length '+(i-prev)+'; type '+(es[prev+3]&31)+'; header '+hex(es.subarray(prev+3,Math.min(i,prev+15))));prev=i;i+=3;}}
+ const rawParams=[];for(let i=0;i+4<a.length&&rawParams.length<20;i++){if(a[i]===0&&a[i+1]===0&&a[i+2]===1&&[7,8].includes(a[i+3]&31)&&!(a[i+3]&128))rawParams.push('offset '+i+'; sector '+Math.floor(i/2048)+'; header '+hex(a.subarray(i+3,i+15)));}
  const types={};let firstSps=null;for(let i=0;i+4<es.length;i++){if(es[i]===0&&es[i+1]===0&&es[i+2]===1){const n=es[i+3]&31;types[n]=(types[n]||0)+1;if(n===7&&!firstSps)firstSps=hex(es.subarray(i+3,i+12));i+=3;}}
  const desc=t=>t.length?t.length+' PTS; primo '+t[0]+'; ultimo '+t[t.length-1]+'; intervallo '+((Math.max(...t)-Math.min(...t))/90000).toFixed(3)+' s':'nessun PTS';
- out.textContent=['Video PES: '+parts.length,'H.264 estratto: '+total+' byte','NAL Annex B: '+JSON.stringify(types),'SPS: '+(firstSps||'non trovato'),'Video: '+desc(tracks.video),'Audio: '+desc(tracks.audio),'Differenza PTS iniziali (s): '+(tracks.video.length&&tracks.audio.length?((tracks.video[0]-tracks.audio[0])/90000).toFixed(6):'non disponibile'),'WebCodecs VideoDecoder: '+(typeof VideoDecoder!=='undefined'?'presente':'assente'),'Nota: analisi, non ancora riproduzione video.'].join('\n');
+ out.textContent=['Video PES: '+parts.length,'H.264 estratto: '+total+' byte','NAL Annex B: '+JSON.stringify(types),'SPS: '+(firstSps||'non trovato'),'Video: '+desc(tracks.video),'Audio: '+desc(tracks.audio),'Differenza PTS iniziali (s): '+(tracks.video.length&&tracks.audio.length?((tracks.video[0]-tracks.audio[0])/90000).toFixed(6):'non disponibile'),'WebCodecs VideoDecoder: '+(typeof VideoDecoder!=='undefined'?'presente':'assente'),'Possibili SPS/PPS nel MPS originale (da validare): '+(rawParams.join('; ')||'nessuno'),'Prime NAL estratte:\n'+preview.join('\n'),'Nota: analisi, non ancora riproduzione video.'].join('\n');
 };
 document.getElementById('decodeSample').onclick=async()=>{
  const status=document.getElementById('decodeStatus'),audio=document.getElementById('decodedAudio');if(!diagnosticStream||diagnosticStream.length<320*696){status.textContent='Campione insufficiente: carica la ISO.';return;}
