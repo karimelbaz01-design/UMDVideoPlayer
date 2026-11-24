@@ -20,7 +20,7 @@ document.getElementById('test').onclick=async()=>{
 const hex=a=>Array.from(a,b=>b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
 let diagnosticStream=null, diagnosticVideoBytes=null, extractedVideo=null;
 document.getElementById('playVideoTest').onclick=async()=>{
- const status=document.getElementById('playVideoStatus'),canvas=document.getElementById('videoCanvas'),ctx=canvas.getContext('2d');let decoder;const frames=[];let failure=null;const button=document.getElementById('playVideoTest');button.disabled=true;let rendered=0,decoded=0,clock=null;
+ const status=document.getElementById('playVideoStatus'),canvas=document.getElementById('videoCanvas'),ctx=canvas.getContext('2d');let decoder;const frames=[];let failure=null;const button=document.getElementById('playVideoTest');button.disabled=true;let rendered=0,decoded=0,clock=null,rgbRaw=null,rgbImage=null;
  try{
  if(!extractedVideo)document.getElementById('videoProbe').click();
  const es=extractedVideo;if(!es)throw Error('Carica prima la ISO');
@@ -31,19 +31,19 @@ document.getElementById('playVideoTest').onclick=async()=>{
  const avcc=new Uint8Array(11+sp.length+pp.length);let k=0;avcc.set([1,sp[1],sp[2],sp[3],255,225,sp.length>>8,sp.length&255],k);k=8;avcc.set(sp,k);k+=sp.length;avcc.set([1,pp.length>>8,pp.length&255],k);avcc.set(pp,k+3);
  const config={codec:'avc1.4D401E',description:avcc,hardwareAcceleration:document.getElementById('videoAcceleration').value,optimizeForLatency:false};if(!(await VideoDecoder.isConfigSupported(config)).supported)throw Error('Configurazione AVCC non supportata');
  decoder=new VideoDecoder({output:f=>{decoded++;frames.push(f);},error:e=>{failure=e;}});decoder.configure(config);
- let submitted=0;let fields=0;const paired=document.getElementById('fieldPair').checked;const step=paired?2:1;
+ let submitted=0;let fields=0,nalCursor=0;const paired=document.getElementById('fieldPair').checked;const step=paired?2:1;
  const draw=async(f)=>{if(clock===null){clock=performance.now();canvas.width=f.displayWidth;canvas.height=f.displayHeight;}try{if(document.getElementById('videoRender').value==='rgb'){
  const w=f.displayWidth,h=f.displayHeight;
  if(f.format!=='NV12')throw Error('Formato non NV12: '+f.format);
  const rect=f.visibleRect;const cw=rect.width,ch=rect.height;
  const opts={rect:{x:rect.x,y:rect.y,width:cw,height:ch}};
- const raw=new Uint8Array(f.allocationSize(opts));const layout=await f.copyTo(raw,opts);
- const img=ctx.createImageData(cw,ch);const d=img.data;
- for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const bob=document.getElementById('deinterlace').checked;const yy=bob?(y&~1):y;const y0=raw[layout[0].offset+yy*layout[0].stride+x];const Y=bob&&(y&1)?(y0+raw[layout[0].offset+Math.min(yy+2,ch-2)*layout[0].stride+x])/2:y0;const uv=layout[1].offset+(y>>1)*layout[1].stride+(x&~1);const U=raw[uv]-128,V=raw[uv+1]-128;const l=1.164*(Y-16),i=(y*cw+x)*4;d[i]=l+1.596*V;d[i+1]=l-.392*U-.813*V;d[i+2]=l+2.017*U;d[i+3]=255;}
+ const size=f.allocationSize(opts);if(!rgbRaw||rgbRaw.length!==size)rgbRaw=new Uint8Array(size);const raw=rgbRaw;const layout=await f.copyTo(raw,opts);
+ if(!rgbImage||rgbImage.width!==cw||rgbImage.height!==ch)rgbImage=ctx.createImageData(cw,ch);const img=rgbImage;const d=img.data;const bob=document.getElementById('deinterlace').checked;
+ for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const yy=bob?(y&~1):y;const y0=raw[layout[0].offset+yy*layout[0].stride+x];const Y=bob&&(y&1)?(y0+raw[layout[0].offset+Math.min(yy+2,ch-2)*layout[0].stride+x])/2:y0;const uv=layout[1].offset+(y>>1)*layout[1].stride+(x&~1);const U=raw[uv]-128,V=raw[uv+1]-128;const l=1.164*(Y-16),i=(y*cw+x)*4;d[i]=l+1.596*V;d[i+1]=l-.392*U-.813*V;d[i+2]=l+2.017*U;d[i+3]=255;}
  if(canvas.width!==cw||canvas.height!==ch){canvas.width=cw;canvas.height=ch;}ctx.putImageData(img,0,0);
  }else ctx.drawImage(f,0,0);rendered++;await new Promise(resolve=>setTimeout(resolve,Math.max(0,clock+rendered*1000/(paired?29.97:59.94)-performance.now())));}finally{f.close();}};
 
- for(let i=0;i+step<aud.length&&submitted<Math.ceil(Number(document.getElementById('videoDuration').value)*59.94/step);){const p=aud[i].p,end=aud[i+step].p;const indices=[];for(let j=0;j<starts.length;j++)if(starts[j].p>=p&&starts[j].p<end&&[1,5,6,7,8].includes(starts[j].type))indices.push(j);const key=indices.some(j=>starts[j].type===5);if(!submitted&&!key){i++;continue;}const units=indices.map(nal);const data=new Uint8Array(units.reduce((n,u)=>n+4+u.length,0));const dv=new DataView(data.buffer);let pos=0;for(const u of units){dv.setUint32(pos,u.length);data.set(u,pos+4);pos+=4+u.length;}decoder.decode(new EncodedVideoChunk({type:key?'key':'delta',timestamp:Math.round(submitted*1000000/(59.94/step)),data}));submitted++;fields+=step;i+=step;while(decoder.decodeQueueSize>12){if(failure)throw failure;await new Promise(resolve=>setTimeout(resolve,5));}while(frames.length>8){await draw(frames.shift());}if(failure)throw failure;if(submitted%30===0)status.textContent='Inviati: '+submitted+'; visualizzati: '+rendered;}
+ for(let i=0;i+step<aud.length&&submitted<Math.ceil(Number(document.getElementById('videoDuration').value)*59.94/step);){const p=aud[i].p,end=aud[i+step].p;const indices=[];while(nalCursor<starts.length&&starts[nalCursor].p<p)nalCursor++;for(let j=nalCursor;j<starts.length&&starts[j].p<end;j++)if([1,5,6,7,8].includes(starts[j].type))indices.push(j);const key=indices.some(j=>starts[j].type===5);if(!submitted&&!key){i++;continue;}const units=indices.map(nal);const data=new Uint8Array(units.reduce((n,u)=>n+4+u.length,0));const dv=new DataView(data.buffer);let pos=0;for(const u of units){dv.setUint32(pos,u.length);data.set(u,pos+4);pos+=4+u.length;}decoder.decode(new EncodedVideoChunk({type:key?'key':'delta',timestamp:Math.round(submitted*1000000/(59.94/step)),data}));submitted++;fields+=step;i+=step;while(decoder.decodeQueueSize>12){if(failure)throw failure;await new Promise(resolve=>setTimeout(resolve,5));}while(frames.length>8){await draw(frames.shift());}if(failure)throw failure;if(submitted%30===0)status.textContent='Inviati: '+submitted+'; visualizzati: '+rendered;}
  await decoder.flush();if(failure)throw failure;while(frames.length)await draw(frames.shift());if(!decoded)throw Error('Nessun fotogramma decodificato');status.textContent='Campi: '+fields+'; unità inviate: '+submitted+'; fotogrammi decodificati: '+decoded+'; visualizzati: '+rendered+'; durata nominale: '+(rendered/(59.94/step)).toFixed(2)+' s; durata reale: '+((performance.now()-clock)/1000).toFixed(2)+' s. Timestamp provvisori.';
  }catch(e){status.textContent='Errore video: '+e.message;}finally{for(const f of frames)f.close();if(decoder&&decoder.state!=='closed')decoder.close();button.disabled=false;}
 };
