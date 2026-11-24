@@ -14,13 +14,13 @@ permissions:
   id-token: write
 concurrency:
   group: frame-web-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.retry_deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Prepare static site
@@ -44,5 +44,14 @@ jobs:
           done
           echo "Pages artifact not visible after 100 seconds"
           exit 1
+      - name: Allow Pages metadata propagation
+        run: sleep 45
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait before retrying deployment
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 60
+      - id: retry_deployment
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
