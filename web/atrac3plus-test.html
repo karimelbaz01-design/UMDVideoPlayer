@@ -28,9 +28,23 @@ document.getElementById('ivtcTest').onclick=async()=>{
  if(duration>30){if(!cinemaSource)throw Error('Carica una ISO');const {file,offset,size}=cinemaSource;const length=Math.min(size,Math.ceil(duration/30)*16*1024*1024);st.textContent='Lettura campione esteso…';await inspectMps({name:'MPS cinema',size:length,slice:(a,b)=>file.slice(offset+a,offset+b)},length);document.getElementById('videoProbe').click();}
  if(!extractedVideo)document.getElementById('videoProbe').click();
  if(!extractedVideo||!diagnosticStream)throw Error('Carica prima la ISO');
+ if(duration>200){
+ const a=diagnosticStream,count=Math.ceil((duration+0.4)*48000/2048),out=new Uint8Array(count*696);
+ const match=p=>p>=0&&p+4<=a.length&&a[p]===15&&a[p+1]===208&&a[p+2]===72&&a[p+3]===85;
+ let p=0,repairs=0;
+ for(let i=0;i<count;i++){
+ if(!match(p)||!match(p+696)){
+ let q=p+1;while(q+1392<a.length&&q<p+8192&&!(match(q)&&match(q+696)&&match(q+1392)))q++;
+ if(!i||q+1392>=a.length||q>=p+8192)throw Error('Audio: recupero impossibile al blocco '+i);
+ out.set(out.subarray((i-1)*696,i*696),i*696);p=q;repairs++;continue;
+ }
+ out.set(a.subarray(p,p+696),i*696);p+=696;
+ }
+ diagnosticStream=out;st.textContent='Recupero audio: '+repairs+' blocchi sostituiti';
+ }
  st.textContent='Caricamento FFmpeg software…';
  const {FFmpeg}=await import('./ffmpeg-cinema/ffmpeg/index.js');ff=new FFmpeg();
- ff.on('log',({message})=>{st.textContent='FRAME CINEMA v8: '+message;});
+ ff.on('log',({message})=>{st.textContent='FRAME CINEMA v8.1: '+message;});
  await ff.load({coreURL:new URL('./ffmpeg-cinema/core/ffmpeg-core.js',location.href).href,wasmURL:new URL('./ffmpeg-cinema/core/ffmpeg-core.wasm',location.href).href});
  await ff.writeFile('input.h264',extractedVideo.slice());
  const rate=48000,count=Math.ceil((duration+0.4)*rate/2048),n=count*2048*2,wav=new Uint8Array(44+n*2),dv=new DataView(wav.buffer);
@@ -41,8 +55,8 @@ document.getElementById('ivtcTest').onclick=async()=>{
  const offset=(syncTracks.video[0]-syncTracks.audio[0])/90000;
  const code=await ff.exec(['-f','h264','-i','input.h264','-ss',String(Math.max(0,offset)),'-i','audio.wav','-map','0:v:0','-map','1:a:0','-vf','fieldmatch=order=bff,decimate','-t',String(duration),'-c:v','libx264','-preset','ultrafast','-crf','22','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart','out.mp4']);
  if(code!==0)throw Error('FFmpeg exit '+code);
- const data=await ff.readFile('out.mp4');if(ivtcUrl)URL.revokeObjectURL(ivtcUrl);ivtcUrl=URL.createObjectURL(new Blob([data],{type:'video/mp4'}));v.src=ivtcUrl;st.textContent='FRAME CINEMA v8: MP4 pronto, '+data.length+' byte. Premi Play nel video. Test locale '+duration+' secondi richiesti.';
- }catch(e){st.textContent='FRAME CINEMA v8: '+e.message;}finally{if(d)d.dispose();if(ff)ff.terminate();b.disabled=false;}
+ const data=await ff.readFile('out.mp4');if(ivtcUrl)URL.revokeObjectURL(ivtcUrl);ivtcUrl=URL.createObjectURL(new Blob([data],{type:'video/mp4'}));v.src=ivtcUrl;st.textContent='FRAME CINEMA v8.1: MP4 pronto, '+data.length+' byte. Premi Play nel video. Test locale '+duration+' secondi richiesti.';
+ }catch(e){st.textContent='FRAME CINEMA v8.1: '+e.message;}finally{if(d)d.dispose();if(ff)ff.terminate();b.disabled=false;}
 };
 document.getElementById('playVideoTest').onclick=async()=>{
  const status=document.getElementById('playVideoStatus'),canvas=document.getElementById('videoCanvas'),ctx=canvas.getContext('2d');let decoder;const frames=[];let failure=null;const button=document.getElementById('playVideoTest');button.disabled=true;let rendered=0,decoded=0,clock=null,rgbRaw=null,rgbImage=null,finished=false,consumer=null,stalls=0,maxGap=0,lastDraw=null,ac=null,source=null,pcm=null,audioStart=null,offset=0,rate=48000,peak=0,energy=0,media=null,mediaUrl=null;
