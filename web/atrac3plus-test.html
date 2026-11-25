@@ -77,6 +77,15 @@ document.getElementById('ivtcTest').onclick=async()=>{
  extractedVideo=join(parts,vn);diagnosticStream=join(audio,an);syncTracks=tracks;cinemaAudioMap=[];
  st.textContent='Demux pack: '+unaligned+' pacchetti fuori griglia; audio '+an+'; video '+vn;
  }
+ if(duration===240){
+ const sig=[15,208,72,85,0,0,0,0],a=diagnosticStream,match=q=>q>=0&&q+8<=a.length&&sig.every((x,j)=>a[q+j]===x);
+ let p=0;const gaps=[];while(p+696<=a.length){if(match(p)&&match(p+696)){p+=696;continue;}let q=p+1;while(q<Math.min(a.length-1392,p+8192)&&!(match(q)&&match(q+696)&&match(q+1392)))q++;if(q>=Math.min(a.length-1392,p+8192))break;gaps.push({expected:p,found:q,delta:q-p});p=q;if(gaps.length>=4)break;}
+ const source=cinemaSource;const center=48999095;const start=Math.max(0,center-262144),end=Math.min(source.size,center+262144);
+ const raw=await source.file.slice(source.offset+start,source.offset+end).arrayBuffer();
+ const old=document.getElementById('cinemaRawExport');if(old)old.remove();
+ const link=document.createElement('a');link.id='cinemaRawExport';link.textContent='Esporta campione MPS diagnostico (512 KiB)';link.download='FRAME-MPS-offset-'+start+'.bin';link.href=URL.createObjectURL(new Blob([raw],{type:'application/octet-stream'}));st.before(link);
+ throw Error('Diagnostica discontinuità: '+JSON.stringify(gaps)+'; campione MPS disponibile sopra. Nessun frame modificato.');
+ }
  const required=Math.ceil((duration+0.4)*48000/2048)*696;if(diagnosticStream.length<required)throw Error('Estrazione compatibile: audio '+diagnosticStream.length+' / '+required+' byte; verifica MPS necessaria');
  for(let i=0;i<required/696;i++){const p=i*696;if(diagnosticStream[p]!==15||diagnosticStream[p+1]!==208){
  const sig=[15,208,72,85,0,0,0,0],match=q=>q>=0&&q+8<=diagnosticStream.length&&sig.every((x,j)=>diagnosticStream[q+j]===x);
@@ -90,7 +99,7 @@ document.getElementById('ivtcTest').onclick=async()=>{
  }}
  st.textContent='Caricamento FFmpeg software…';
  const {FFmpeg}=await import('./ffmpeg-cinema/ffmpeg/index.js');ff=new FFmpeg();
- ff.on('log',({message})=>{st.textContent='FRAME CINEMA v9.7: '+message;});
+ ff.on('log',({message})=>{st.textContent='FRAME CINEMA v9.8: '+message;});
  await ff.load({coreURL:new URL('./ffmpeg-cinema/core/ffmpeg-core.js',location.href).href,wasmURL:new URL('./ffmpeg-cinema/core/ffmpeg-core.wasm',location.href).href});
  await ff.writeFile('input.h264',extractedVideo.slice());
  const rate=48000,count=Math.ceil((duration+0.4)*rate/2048),n=count*2048*2,wav=new Uint8Array(44+n*2),dv=new DataView(wav.buffer);
@@ -101,8 +110,8 @@ document.getElementById('ivtcTest').onclick=async()=>{
  const offset=(syncTracks.video[0]-syncTracks.audio[0])/90000;
  const code=await ff.exec(['-f','h264','-i','input.h264','-ss',String(Math.max(0,offset)),'-i','audio.wav','-map','0:v:0','-map','1:a:0','-vf','fieldmatch=order=bff,decimate','-t',String(duration),'-c:v','libx264','-preset','ultrafast','-crf','22','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart','out.mp4']);
  if(code!==0)throw Error('FFmpeg exit '+code);
- const data=await ff.readFile('out.mp4');if(ivtcUrl)URL.revokeObjectURL(ivtcUrl);ivtcUrl=URL.createObjectURL(new Blob([data],{type:'video/mp4'}));v.src=ivtcUrl;st.textContent='FRAME CINEMA v9.7: MP4 pronto, '+data.length+' byte. Premi Play nel video. Test locale '+duration+' secondi richiesti.';
- }catch(e){st.textContent='FRAME CINEMA v9.7: '+e.message;}finally{if(d)d.dispose();if(ff)ff.terminate();b.disabled=false;legacy.disabled=false;}
+ const data=await ff.readFile('out.mp4');if(ivtcUrl)URL.revokeObjectURL(ivtcUrl);ivtcUrl=URL.createObjectURL(new Blob([data],{type:'video/mp4'}));v.src=ivtcUrl;st.textContent='FRAME CINEMA v9.8: MP4 pronto, '+data.length+' byte. Premi Play nel video. Test locale '+duration+' secondi richiesti.';
+ }catch(e){st.textContent='FRAME CINEMA v9.8: '+e.message;}finally{if(d)d.dispose();if(ff)ff.terminate();b.disabled=false;legacy.disabled=false;}
 };
 document.getElementById('playVideoTest').onclick=async()=>{
  const status=document.getElementById('playVideoStatus'),canvas=document.getElementById('videoCanvas'),ctx=canvas.getContext('2d');let decoder;const frames=[];let failure=null;const button=document.getElementById('playVideoTest');button.disabled=true;let rendered=0,decoded=0,clock=null,rgbRaw=null,rgbImage=null,finished=false,consumer=null,stalls=0,maxGap=0,lastDraw=null,ac=null,source=null,pcm=null,audioStart=null,offset=0,rate=48000,peak=0,energy=0,media=null,mediaUrl=null;
